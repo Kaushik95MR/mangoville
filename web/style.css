@@ -62,3 +62,9 @@ input:focus,textarea:focus{outline:2px solid var(--green);outline-offset:-1px}
 .switch input{width:46px;height:28px;border-radius:14px;border:0;background:var(--line);position:relative;padding:0;transition:.2s;flex:none}
 .switch input:before{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:11px;background:#fff;transition:.2s}
 .switch input:checked{background:var(--green)}.switch input:checked:before{left:21px}
+
+.idcard{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:14px;padding:12px 14px}
+.idcard b{display:block}.idcard small{display:block;color:var(--mute);font-size:12px}
+.idcard img{width:64px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.idcard.ok b{color:var(--green)}.idcard.up{flex-direction:column;align-items:flex-start;border:1.5px dashed var(--green);cursor:pointer}.idcard.up b{color:var(--green)}
+.mini{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--green);cursor:pointer}

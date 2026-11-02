@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct CustomersScreen: View {
     @Environment(Store.self) private var store
@@ -62,6 +63,7 @@ struct CustomersScreen: View {
 
     private func subtitle(_ e: Entry) -> String {
         var parts: [String] = []
+        if e.customer.isVerified { parts.append("✓ ID") }
         if !e.customer.phone.isEmpty { parts.append(e.customer.phone) }
         if !e.customer.city.isEmpty { parts.append(e.customer.city) }
         parts.append("\(e.stays.count) stay\(e.stays.count == 1 ? "" : "s")")
@@ -77,6 +79,7 @@ struct CustomerForm: View {
     @State private var customer: Customer
     @State private var confirmDelete = false
     @State private var editingBooking: Booking?
+    @State private var pickerItem: PhotosPickerItem?
 
     init(customer: Customer) { _customer = State(initialValue: customer) }
 
@@ -91,8 +94,23 @@ struct CustomerForm: View {
                         .textContentType(.telephoneNumber)
                     TextField("City / address", text: $customer.city)
                 }
+                Section("Aadhaar") {
+                    TextField("Aadhaar number (optional)", text: $customer.idProof)
+                        .keyboardType(.numberPad)
+                    if let data = customer.idImage, let ui = UIImage(data: data) {
+                        HStack(spacing: 12) {
+                            Image(uiImage: ui).resizable().scaledToFill().frame(width: 64, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Label("Verified — Aadhaar on file", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                        }
+                        PhotosPicker("Replace photo", selection: $pickerItem, matching: .images)
+                    } else {
+                        PhotosPicker(selection: $pickerItem, matching: .images) {
+                            Label("Upload Aadhaar photo", systemImage: "person.text.rectangle")
+                        }
+                    }
+                }
                 Section("Details") {
-                    TextField("ID proof (optional) — Aadhaar / licence no.", text: $customer.idProof)
                     TextField("Notes — preferences, group size, vehicle…", text: $customer.notes, axis: .vertical)
                         .lineLimit(2...5)
                 }
@@ -133,6 +151,13 @@ struct CustomerForm: View {
                 }
             }
             .sheet(item: $editingBooking) { BookingForm(booking: $0) }
+            .onChange(of: pickerItem) { _, item in
+                Task {
+                    if let raw = try? await item?.loadTransferable(type: Data.self), let jpeg = compressedJPEG(raw) {
+                        customer.idImage = jpeg
+                    }
+                }
+            }
         }
     }
 }

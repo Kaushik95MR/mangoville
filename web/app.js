@@ -8,13 +8,19 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY AUTOINCREMENT, start TEXT NOT NULL, nights INTEGER NOT NULL DEFAULT 1,
   guest TEXT DEFAULT '', phone TEXT DEFAULT '', source TEXT DEFAULT 'Direct', total INTEGER DEFAULT 0, advance INTEGER DEFAULT 0,
-  settled INTEGER DEFAULT 0, notes TEXT DEFAULT '');
+  settled INTEGER DEFAULT 0, notes TEXT DEFAULT '', checkin_time TEXT DEFAULT '14:00', checkout_time TEXT DEFAULT '11:00', guests INTEGER DEFAULT 2);
 CREATE TABLE IF NOT EXISTS expenses(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, description TEXT DEFAULT '',
   category TEXT DEFAULT 'Other', amount INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT DEFAULT '', phone TEXT DEFAULT '', city TEXT DEFAULT '',
-  id_proof TEXT DEFAULT '', notes TEXT DEFAULT '');
+  id_proof TEXT DEFAULT '', notes TEXT DEFAULT '', id_img BLOB);
 INSERT OR IGNORE INTO settings VALUES('fixed_cost','12000');`;
+const hasCol = (d, t, c) => (d.exec(`PRAGMA table_info(${t})`)[0]?.values || []).some(r => r[1] === c);
+function migrate(d) {
+  [['bookings', 'checkin_time', "TEXT DEFAULT '14:00'"], ['bookings', 'checkout_time', "TEXT DEFAULT '11:00'"],
+   ['bookings', 'guests', 'INTEGER DEFAULT 2'], ['customers', 'id_img', 'BLOB']]
+    .forEach(([t, c, def]) => { if (!hasCol(d, t, c)) d.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); });
+}
 const PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
 let db, tab = 'cal', custQuery = '';
@@ -43,8 +49,14 @@ const sameCust = (c, name, phone) => {
 };
 function ensureCustomer(name, phone) {
   name = String(name || '').trim();
-  if ((!name && !np(phone)) || (!np(phone) && SOURCES.includes(name))) return;
-  if (!q('SELECT * FROM customers').some(c => sameCust(c, name, phone))) db.run('INSERT INTO customers(name,phone) VALUES(?,?)', [name, np(phone)]);
+  if ((!name && !np(phone)) || (!np(phone) && SOURCES.includes(name))) return 0;
+  const hit = q('SELECT * FROM customers').find(c => sameCust(c, name, phone));
+  if (hit) {
+    if (!np(hit.phone) && np(phone)) db.run('UPDATE customers SET phone=? WHERE id=?', [np(phone), hit.id]);
+    return hit.id;
+  }
+  db.run('INSERT INTO customers(name,phone) VALUES(?,?)', [name, np(phone)]);
+  return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
 }
 function backfillCustomers() { q('SELECT guest,phone FROM bookings').forEach(b => ensureCustomer(b.guest, b.phone)); persist(); }
 const fixedCost = () => +q('SELECT value FROM settings WHERE key="fixed_cost"')[0].value || 0;
@@ -108,7 +120,7 @@ function renderCal() {
 
 function bookingRow(b, showDate) {
   const d = due(b);
-  return `<button class="row" data-id="${b.id}"><span><b>${esc(b.guest || 'Guest')}</b><small>${showDate ? esc(nice(b.start)) + ' · ' : ''}${esc(b.nights)} night${b.nights > 1 ? 's' : ''} · ${esc(b.source)}</small></span>
+  return `<button class="row" data-id="${b.id}"><span><b>${esc(b.guest || 'Guest')}</b><small>${showDate ? esc(nice(b.start)) + ' · ' : ''}${esc(b.nights)} night${b.nights > 1 ? 's' : ''}${b.guests ? ' · ' + esc(b.guests) + ' guests' : ''} · ${esc(b.source)}</small></span>
   <span class="amt">${inr(b.total)}<br><span class="pill ${d ? 'due' : 'paid'}">${d ? 'Due ' + inr(d) : 'Paid'}</span></span></button>`;
 }
 
@@ -145,6 +157,25 @@ function renderSum() {
   $('#file').onchange = importDb;
 }
 
+async function compressImage(file) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.7));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+/* Aadhaar photo box. st = { stored: bytes|null (already on file), pending: bytes|null (new, saved with the form) } */
+function paintId(host, st) {
+  const img = st.pending || st.stored;
+  const url = img ? URL.createObjectURL(new Blob([img], { type: 'image/jpeg' })) : '';
+  host.innerHTML = img
+    ? `<div class="idcard ok"><img src="${url}" alt="Aadhaar"><div><b>${st.pending ? 'Aadhaar attached' : '✓ Verified'}</b><small>${st.pending ? 'Saved when you tap Save' : 'Aadhaar already on file — no need to upload again'}</small><label class="mini">Replace<input type="file" accept="image/*" hidden></label></div></div>`
+    : `<label class="idcard up"><b>Upload Aadhaar</b><small>Photo of the card. Stored only on this phone.</small><input type="file" accept="image/*" hidden></label>`;
+  host.querySelector('input').onchange = async e => { const f = e.target.files[0]; if (f) { st.pending = await compressImage(f); paintId(host, st); } };
+}
+
 function custRows() {
   const bookings = q('SELECT * FROM bookings'), s = custQuery.trim().toLowerCase();
   return q('SELECT * FROM customers').map(c => {
@@ -156,7 +187,7 @@ function custRows() {
 function drawCus() {
   const rows = custRows();
   $('#clist').innerHTML = rows.length ? rows.map(r => `<button class="row" data-cid="${r.c.id}"><span><b>${esc(r.c.name || r.c.phone || 'Unnamed')}</b>
-    <small>${esc(r.c.phone)}${r.c.city ? ' · ' + esc(r.c.city) : ''} · ${r.bs.length} stay${r.bs.length === 1 ? '' : 's'}${r.last ? ' · last ' + esc(nice(r.last)) : ''}</small></span>
+    <small>${r.c.id_img ? '✓ ID · ' : ''}${esc(r.c.phone)}${r.c.city ? ' · ' + esc(r.c.city) : ''} · ${r.bs.length} stay${r.bs.length === 1 ? '' : 's'}${r.last ? ' · last ' + esc(nice(r.last)) : ''}</small></span>
     <span class="amt">${inr(r.spent)}${r.owed ? `<br><span class="pill due">Due ${inr(r.owed)}</span>` : ''}</span></button>`).join('') : '<div class="empty">No customers found</div>';
   document.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => customerForm(+b.dataset.cid));
 }
@@ -170,26 +201,30 @@ function renderCus() {
 }
 
 function customerForm(id) {
-  const c = id ? q('SELECT * FROM customers WHERE id=?', [id])[0] : { name: '', phone: '', city: '', id_proof: '', notes: '' };
+  const c = id ? q('SELECT * FROM customers WHERE id=?', [id])[0] : { name: '', phone: '', city: '', id_proof: '', notes: '', id_img: null };
   const bs = id ? q('SELECT * FROM bookings ORDER BY start DESC').filter(b => sameCust(c, b.guest, b.phone)) : [];
+  const st = { stored: c.id_img || null, pending: null };
   sheet(`<h3>${id ? 'Customer' : 'New customer'}</h3>
   <label class="l">Name</label><input id="c_name" value="${esc(c.name)}" autocomplete="off">
   <label class="l">Phone</label><input id="c_phone" type="tel" value="${esc(c.phone)}">
   <label class="l">City / address</label><input id="c_city" value="${esc(c.city)}">
-  <label class="l">ID proof (optional)</label><input id="c_id" placeholder="e.g. Aadhaar / licence number" value="${esc(c.id_proof)}">
+  <label class="l">Aadhaar number (optional)</label><input id="c_id" inputmode="numeric" placeholder="12-digit number" value="${esc(c.id_proof)}">
+  <label class="l">Aadhaar photo</label><div id="idbox"></div>
   <label class="l">Notes</label><textarea id="c_notes" rows="2" placeholder="Preferences, group size, vehicle...">${esc(c.notes)}</textarea>
   ${bs.length ? `<label class="l">Stays · ${bs.length} · ${inr(bs.reduce((a, b) => a + b.total, 0))}</label><div class="list">${bs.map(b => bookingRow(b, true)).join('')}</div>` : ''}
   <button class="btn" id="save">Save</button>
   ${id && c.phone ? `<a class="btn alt" href="tel:${esc(c.phone)}">Call</a>` : ''}
   ${id ? '<button class="btn del" id="del">Delete contact (bookings stay)</button>' : ''}`);
+  paintId($('#idbox'), st);
   document.querySelectorAll('#panel [data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
   $('#save').onclick = () => {
     const v = { name: $('#c_name').value.trim(), phone: np($('#c_phone').value), city: $('#c_city').value.trim(), id_proof: $('#c_id').value.trim(), notes: $('#c_notes').value.trim() };
     if (!v.name && !v.phone) return alert('Enter a name or phone number');
+    const img = st.pending || st.stored;
     if (id) {
       bs.forEach(b => db.run('UPDATE bookings SET guest=?,phone=? WHERE id=?', [v.name, v.phone, b.id]));
-      run('UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=? WHERE id=?', [v.name, v.phone, v.city, v.id_proof, v.notes, id]);
-    } else run('INSERT INTO customers(name,phone,city,id_proof,notes) VALUES(?,?,?,?,?)', [v.name, v.phone, v.city, v.id_proof, v.notes]);
+      run('UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=?,id_img=? WHERE id=?', [v.name, v.phone, v.city, v.id_proof, v.notes, img, id]);
+    } else run('INSERT INTO customers(name,phone,city,id_proof,notes,id_img) VALUES(?,?,?,?,?,?)', [v.name, v.phone, v.city, v.id_proof, v.notes, img]);
     closeSheet();
   };
   if (id) $('#del').onclick = () => { if (confirm('Delete this contact? Their bookings are kept.')) { run('DELETE FROM customers WHERE id=?', [id]); closeSheet(); } };
@@ -211,12 +246,21 @@ function openDay(date) {
   document.querySelectorAll('#panel [data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
 }
 
+const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
 function bookingForm(id, date) {
-  const b = id ? q('SELECT * FROM bookings WHERE id=?', [id])[0] : { start: date || todayISO(), nights: 1, guest: '', phone: '', source: 'Direct', total: '', advance: '', settled: 0, notes: '' };
+  const b = id ? q('SELECT * FROM bookings WHERE id=?', [id])[0] : { start: date || todayISO(), nights: 1, guest: '', phone: '', source: 'Direct', total: '', advance: '', settled: 0, notes: '', checkin_time: '14:00', checkout_time: '11:00', guests: 2 };
+  const st = { stored: null, pending: null };
+  const custs = q('SELECT id,name,phone,id_img FROM customers');
   sheet(`<h3>${id ? 'Edit booking' : 'New booking'}</h3>
-  <label class="l">Guest</label><input id="f_guest" list="custlist" placeholder="Name" value="${esc(b.guest)}" autocomplete="off"><datalist id="custlist">${q('SELECT name FROM customers WHERE name<>""').map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
-  <label class="l">Phone</label><input id="f_phone" type="tel" placeholder="Mobile number" value="${esc(b.phone)}">
-  <div class="two"><div><label class="l">Check-in</label><input id="f_start" type="date" value="${esc(b.start)}"></div><div><label class="l">Nights</label><input id="f_nights" type="number" inputmode="numeric" min="1" value="${esc(b.nights)}"></div></div>
+  <label class="l">Guest</label><input id="f_guest" list="custlist" placeholder="Name — returning guests load automatically" value="${esc(b.guest)}" autocomplete="off">
+  <datalist id="custlist">${custs.filter(c => c.name).map(c => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join('')}</datalist>
+  <label class="l">Phone</label><input id="f_phone" type="tel" list="phlist" placeholder="Mobile number" value="${esc(b.phone)}">
+  <datalist id="phlist">${custs.filter(c => c.phone).map(c => `<option value="${esc(c.phone)}">${esc(c.name)}</option>`).join('')}</datalist>
+  <div id="idbox" style="margin-top:10px"></div>
+  <div class="two"><div><label class="l">Check-in</label><input id="f_start" type="date" value="${esc(b.start)}"></div><div><label class="l">Time</label><input id="f_in" type="time" value="${esc(b.checkin_time || '14:00')}"></div></div>
+  <div class="two"><div><label class="l">Check-out</label><input id="f_end" type="date" value="${esc(addDays(b.start, b.nights))}"></div><div><label class="l">Time</label><input id="f_out" type="time" value="${esc(b.checkout_time || '11:00')}"></div></div>
+  <div class="two"><div><label class="l">Guests</label><input id="f_guests" type="number" inputmode="numeric" min="1" value="${esc(b.guests || 2)}"></div><div><label class="l">Stay</label><div class="bal" style="margin:0;padding:12px"><span id="nn"></span></div></div></div>
   <label class="l">Source</label>${seg('f_source', SOURCES, b.source)}
   <div class="two"><div><label class="l">Total ₹</label><input id="f_total" type="number" inputmode="numeric" value="${esc(b.total)}"></div><div><label class="l">Advance ₹</label><input id="f_adv" type="number" inputmode="numeric" value="${esc(b.advance)}"></div></div>
   <div class="bal"><span>Balance</span><span id="balv"></span></div>
@@ -226,16 +270,37 @@ function bookingForm(id, date) {
   ${id && b.phone ? `<a class="btn alt" href="tel:${esc(b.phone)}">Call guest</a>` : ''}
   ${id ? '<button class="btn del" id="del">Delete booking</button>' : ''}`);
   wireSeg('f_source');
-  $('#f_guest').onchange = () => { const c = q('SELECT * FROM customers').find(x => x.name.trim().toLowerCase() === $('#f_guest').value.trim().toLowerCase()); if (c && !$('#f_phone').value) $('#f_phone').value = c.phone; };
+
+  // returning guests: fill in details and reuse the Aadhaar already on file
+  const lookup = () => {
+    const name = $('#f_guest').value.trim(), ph = $('#f_phone').value;
+    const all = q('SELECT * FROM customers');
+    let hits = np(ph).length >= 10 ? all.filter(c => np(c.phone) === np(ph)) : name ? all.filter(c => c.name.trim().toLowerCase() === name.toLowerCase()) : [];
+    const c = hits.length === 1 ? hits[0] : null;
+    if (c) { if (!name) $('#f_guest').value = c.name; if (!np(ph)) $('#f_phone').value = c.phone; }
+    st.stored = c ? c.id_img || null : null;
+    paintId($('#idbox'), st);
+  };
+  $('#f_guest').onchange = lookup;
+  $('#f_phone').oninput = () => { if (np($('#f_phone').value).length >= 10) lookup(); };
+  $('#f_phone').onchange = lookup;
+  lookup();
+
+  const nights = () => Math.max(1, dayDiff($('#f_start').value, $('#f_end').value) || 1);
+  const stay = () => { const n = nights(); $('#nn').textContent = `${n} night${n > 1 ? 's' : ''}`; };
+  $('#f_start').onchange = () => { if (dayDiff($('#f_start').value, $('#f_end').value) < 1) $('#f_end').value = addDays($('#f_start').value, 1); stay(); };
+  $('#f_end').onchange = stay; stay();
   const bal = () => { const d = $('#f_settled').checked ? 0 : Math.max(0, (+$('#f_total').value || 0) - (+$('#f_adv').value || 0)); $('#balv').textContent = d ? inr(d) : 'Nothing due'; $('#balv').className = d ? 'neg' : ''; };
   ['f_total', 'f_adv', 'f_settled'].forEach(i => $('#' + i).oninput = bal); bal();
+
   $('#save').onclick = () => {
-    const v = { start: $('#f_start').value, nights: Math.max(1, Math.floor(+$('#f_nights').value) || 1), guest: $('#f_guest').value.trim(), phone: $('#f_phone').value.trim(), source: segVal('f_source') || 'Direct', total: +$('#f_total').value || 0, advance: +$('#f_adv').value || 0, settled: $('#f_settled').checked ? 1 : 0, notes: $('#f_notes').value.trim() };
+    const v = { start: $('#f_start').value, nights: nights(), guest: $('#f_guest').value.trim(), phone: np($('#f_phone').value), source: segVal('f_source') || 'Direct', total: +$('#f_total').value || 0, advance: +$('#f_adv').value || 0, settled: $('#f_settled').checked ? 1 : 0, notes: $('#f_notes').value.trim(), cin: $('#f_in').value || '14:00', cout: $('#f_out').value || '11:00', guests: Math.max(1, Math.floor(+$('#f_guests').value) || 1) };
     if (!v.start) return alert('Pick a check-in date');
-    const p = [v.start, v.nights, v.guest, v.phone, v.source, v.total, v.advance, v.settled, v.notes];
-    ensureCustomer(v.guest, v.phone);
-    if (id) run('UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=? WHERE id=?', [...p, id]);
-    else run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes) VALUES(?,?,?,?,?,?,?,?,?)', p);
+    const p = [v.start, v.nights, v.guest, v.phone, v.source, v.total, v.advance, v.settled, v.notes, v.cin, v.cout, v.guests];
+    const cid = ensureCustomer(v.guest, v.phone);
+    if (st.pending && cid) db.run('UPDATE customers SET id_img=? WHERE id=?', [st.pending, cid]);
+    if (id) run('UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=?,checkin_time=?,checkout_time=?,guests=? WHERE id=?', [...p, id]);
+    else run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', p);
     const [y, m] = v.start.split('-').map(Number); cur = { y, m: m - 1 };
     closeSheet();
   };
@@ -271,7 +336,7 @@ async function importDb(ev) {
   const bytes = new Uint8Array(await f.arrayBuffer());
   if (!confirm('This replaces everything in the app with the contents of this file. Continue?')) return;
   try {
-    const next = new SQL.Database(bytes); next.exec(SCHEMA); next.exec('SELECT count(*) FROM bookings'); db = next; backfillCustomers(); render();
+    const next = new SQL.Database(bytes); next.exec(SCHEMA); migrate(next); next.exec('SELECT count(*) FROM bookings'); db = next; backfillCustomers(); render();
     alert('Restored.');
   } catch (e) { alert('That file is not a Mango Ville backup.'); }
 }
@@ -279,9 +344,14 @@ async function importDb(ev) {
 /* ---------- boot ---------- */
 async function boot() {
   window.SQL = await initSqlJs({ locateFile: f => 'vendor/' + f });
-  const saved = await idbGet();
+  let saved = await idbGet();
+  if (!saved) {
+    // first launch: start from the bundled history
+    try { const r = await fetch('seed.sqlite'); if (r.ok) saved = new Uint8Array(await r.arrayBuffer()); } catch (e) { }
+  }
   db = saved ? new SQL.Database(saved) : new SQL.Database();
   db.exec(SCHEMA);
+  migrate(db);
   backfillCustomers();
   navigator.storage?.persist?.();
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });

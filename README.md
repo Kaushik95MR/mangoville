@@ -1,7 +1,7 @@
 # Mango Ville
 
 Native SwiftUI iPhone app (iOS 17+) for villa bookings: calendar, expenses, monthly summary.
-Data lives in a SQLite file on the phone (`Application Support/mango-ville.sqlite`). No server, no account.
+The app starts with the Excel history bundled as `MangoVille/seed.sqlite` (guest names and phone numbers — keep this repo private). Data lives in a SQLite file on the phone (`Application Support/mango-ville.sqlite`). No server, no account.
 
 - `MangoVille/` — the app (SwiftUI + the system SQLite, no dependencies). `project.yml` is the XcodeGen project spec.
 - `web/` — the earlier browser version, kept for reference (`python -m http.server` inside it).

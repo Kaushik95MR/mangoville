@@ -8,6 +8,8 @@ private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 enum Arg {
     case int(Int)
     case text(String)
+    case blob(Data)
+    case null
 }
 
 /// Minimal wrapper over the SQLite that ships with iOS — no third-party packages.
@@ -43,6 +45,9 @@ final class SQLiteDB {
             switch arg {
             case .int(let v): sqlite3_bind_int64(statement, index, Int64(v))
             case .text(let s): sqlite3_bind_text(statement, index, s, -1, transient)
+            case .blob(let d):
+                _ = d.withUnsafeBytes { sqlite3_bind_blob(statement, index, $0.baseAddress, Int32(d.count), transient) }
+            case .null: sqlite3_bind_null(statement, index)
             }
         }
         return statement
@@ -77,6 +82,11 @@ struct Row {
     init(_ statement: OpaquePointer) { self.statement = statement }
 
     func int(_ column: Int32) -> Int { Int(sqlite3_column_int64(statement, column)) }
+    func data(_ column: Int32) -> Data? {
+        guard let bytes = sqlite3_column_blob(statement, column) else { return nil }
+        let count = Int(sqlite3_column_bytes(statement, column))
+        return count == 0 ? nil : Data(bytes: bytes, count: count)
+    }
     func text(_ column: Int32) -> String {
         sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
     }

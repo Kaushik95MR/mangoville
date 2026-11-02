@@ -11,6 +11,9 @@ struct Booking: Identifiable, Hashable {
     var advance = 0
     var settled = false
     var notes = ""
+    var checkInTime = "14:00"
+    var checkOutTime = "11:00"
+    var guests = 2
 
     var due: Int { settled ? 0 : max(0, total - advance) }
     var days: [String] { (0..<max(nights, 1)).map { DateKey.add(start, $0) } }
@@ -35,6 +38,9 @@ struct Customer: Identifiable, Hashable {
     var city = ""
     var idProof = ""
     var notes = ""
+    var idImage: Data?
+
+    var isVerified: Bool { idImage != nil }
 
     var displayName: String { name.isEmpty ? (phone.isEmpty ? "Unnamed" : phone) : name }
 
@@ -89,6 +95,26 @@ enum DateKey {
     static func add(_ key: String, _ days: Int) -> String {
         guard let d = date(key), let r = Cal.g.date(byAdding: .day, value: days, to: d) else { return key }
         return string(r)
+    }
+}
+
+enum Clock {
+    private static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    static func time(_ date: Date) -> String { formatter.string(from: date) }
+
+    /// "2026-11-03" + "14:00" -> a Date.
+    static func combine(day: String, time: String) -> Date {
+        let base = DateKey.date(day) ?? Date()
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        let h = parts.first ?? 12
+        let m = parts.count > 1 ? parts[1] : 0
+        return Cal.g.date(bySettingHour: h, minute: m, second: 0, of: base) ?? base
     }
 }
 

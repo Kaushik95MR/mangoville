@@ -16,14 +16,37 @@ final class Store {
     private static let schema = """
     CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY AUTOINCREMENT, start TEXT NOT NULL, nights INTEGER NOT NULL DEFAULT 1,
       guest TEXT DEFAULT '', phone TEXT DEFAULT '', source TEXT DEFAULT 'Direct', total INTEGER DEFAULT 0, advance INTEGER DEFAULT 0,
-      settled INTEGER DEFAULT 0, notes TEXT DEFAULT '');
+      settled INTEGER DEFAULT 0, notes TEXT DEFAULT '', checkin_time TEXT DEFAULT '14:00', checkout_time TEXT DEFAULT '11:00', guests INTEGER DEFAULT 2);
     CREATE TABLE IF NOT EXISTS expenses(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, description TEXT DEFAULT '',
       category TEXT DEFAULT 'Other', amount INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE IF NOT EXISTS customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT DEFAULT '', phone TEXT DEFAULT '', city TEXT DEFAULT '',
-      id_proof TEXT DEFAULT '', notes TEXT DEFAULT '');
+      id_proof TEXT DEFAULT '', notes TEXT DEFAULT '', id_img BLOB);
     INSERT OR IGNORE INTO settings VALUES('fixed_cost','12000');
     """
+
+    private static let customerColumns = "id,name,phone,city,id_proof,notes,id_img"
+
+    private static func customer(_ r: Row) -> Customer {
+        Customer(id: r.int(0), name: r.text(1), phone: r.text(2), city: r.text(3), idProof: r.text(4), notes: r.text(5), idImage: r.data(6))
+    }
+
+    /// Creates the tables, then adds any columns that older databases (or the bundled seed) are missing.
+    private static func prepare(_ database: SQLiteDB) throws {
+        try database.script(schema)
+        let additions: [(table: String, column: String, definition: String)] = [
+            ("bookings", "checkin_time", "TEXT DEFAULT '14:00'"),
+            ("bookings", "checkout_time", "TEXT DEFAULT '11:00'"),
+            ("bookings", "guests", "INTEGER DEFAULT 2"),
+            ("customers", "id_img", "BLOB"),
+        ]
+        for item in additions {
+            let existing = try database.rows("PRAGMA table_info(\(item.table))") { $0.text(1) }
+            if !existing.contains(item.column) {
+                try database.script("ALTER TABLE \(item.table) ADD COLUMN \(item.column) \(item.definition)")
+            }
+        }
+    }
 
     static var databaseURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -33,10 +56,19 @@ final class Store {
 
     init() { open() }
 
+    /// First launch only: start from the bundled history (seed.sqlite) instead of an empty database.
+    private static func installSeedIfNeeded() {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: databaseURL.path),
+              let seed = Bundle.main.url(forResource: "seed", withExtension: "sqlite") else { return }
+        try? fm.copyItem(at: seed, to: databaseURL)
+    }
+
     private func open() {
+        Self.installSeedIfNeeded()
         do {
             let database = try SQLiteDB(path: Self.databaseURL.path)
-            try database.script(Self.schema)
+            try Self.prepare(database)
             db = database
             backfillCustomers()
             reload()
@@ -48,16 +80,17 @@ final class Store {
     private func reload() {
         guard let db else { return }
         do {
-            bookings = try db.rows("SELECT id,start,nights,guest,phone,source,total,advance,settled,notes FROM bookings ORDER BY start,id") { r in
+            bookings = try db.rows("SELECT id,start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests FROM bookings ORDER BY start,id") { r in
                 Booking(id: r.int(0), start: r.text(1), nights: max(1, r.int(2)), guest: r.text(3), phone: r.text(4),
-                        source: r.text(5), total: r.int(6), advance: r.int(7), settled: r.int(8) != 0, notes: r.text(9))
+                        source: r.text(5), total: r.int(6), advance: r.int(7), settled: r.int(8) != 0, notes: r.text(9),
+                        checkInTime: r.text(10).isEmpty ? "14:00" : r.text(10),
+                        checkOutTime: r.text(11).isEmpty ? "11:00" : r.text(11),
+                        guests: max(1, r.int(12)))
             }
             expenses = try db.rows("SELECT id,date,description,category,amount FROM expenses ORDER BY date DESC,id DESC") { r in
                 Expense(id: r.int(0), date: r.text(1), desc: r.text(2), category: r.text(3), amount: r.int(4))
             }
-            customers = try db.rows("SELECT id,name,phone,city,id_proof,notes FROM customers ORDER BY name COLLATE NOCASE") { r in
-                Customer(id: r.int(0), name: r.text(1), phone: r.text(2), city: r.text(3), idProof: r.text(4), notes: r.text(5))
-            }
+            customers = try db.rows("SELECT \(Self.customerColumns) FROM customers ORDER BY name COLLATE NOCASE") { Self.customer($0) }
             fixedCost = try db.rows("SELECT value FROM settings WHERE key='fixed_cost'") { Int($0.text(0)) ?? 0 }.first ?? 0
         } catch {
             errorMessage = "Could not read data: \(error)"
@@ -71,16 +104,30 @@ final class Store {
 
     // MARK: Bookings
 
-    func save(_ b: Booking) {
-        ensureCustomer(guest: b.guest, phone: b.phone)
+    /// Saves the booking and keeps the guest's address-book entry (and Aadhaar photo, if one was added) in step.
+    func save(_ b: Booking, idImage: Data? = nil) {
+        let customerID = ensureCustomer(guest: b.guest, phone: b.phone)
+        if let idImage, customerID != 0 {
+            try? db?.run("UPDATE customers SET id_img=? WHERE id=?", [.blob(idImage), .int(customerID)])
+        }
         let args: [Arg] = [.text(b.start), .int(b.nights), .text(b.guest), .text(b.phone), .text(b.source),
-                           .int(b.total), .int(b.advance), .int(b.settled ? 1 : 0), .text(b.notes)]
+                           .int(b.total), .int(b.advance), .int(b.settled ? 1 : 0), .text(b.notes),
+                           .text(b.checkInTime), .text(b.checkOutTime), .int(b.guests)]
         if b.id == 0 {
-            write("INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes) VALUES(?,?,?,?,?,?,?,?,?)", args)
+            write("INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", args)
         } else {
-            write("UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=? WHERE id=?",
+            write("UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=?,checkin_time=?,checkout_time=?,guests=? WHERE id=?",
                   args + [.int(b.id)])
         }
+    }
+
+    /// The one saved customer matching this name / phone, if there is exactly one.
+    func customer(matching guest: String, phone: String) -> Customer? {
+        let name = guest.trimmingCharacters(in: .whitespaces)
+        let number = Customer.normalize(phone)
+        if name.isEmpty && number.isEmpty { return nil }
+        let hits = customers.filter { number.count >= 10 ? Customer.normalize($0.phone) == number : $0.matches(guest: name, phone: number) }
+        return hits.count == 1 ? hits[0] : nil
     }
 
     func delete(_ b: Booking) { write("DELETE FROM bookings WHERE id=?", [.int(b.id)]) }
@@ -88,17 +135,22 @@ final class Store {
     // MARK: Customers
 
     /// Adds an address-book entry for this guest unless one already matches.
-    private func ensureCustomer(guest: String, phone: String) {
+    @discardableResult
+    private func ensureCustomer(guest: String, phone: String) -> Int {
         let name = guest.trimmingCharacters(in: .whitespaces)
         let number = Customer.normalize(phone)
-        if name.isEmpty && number.isEmpty { return }
-        if number.isEmpty && Choices.sources.contains(name) { return }
-        guard let db else { return }
-        let existing = (try? db.rows("SELECT id,name,phone,city,id_proof,notes FROM customers") { r in
-            Customer(id: r.int(0), name: r.text(1), phone: r.text(2), city: r.text(3), idProof: r.text(4), notes: r.text(5))
-        }) ?? []
-        if existing.contains(where: { $0.matches(guest: name, phone: number) }) { return }
+        if name.isEmpty && number.isEmpty { return 0 }
+        if number.isEmpty && Choices.sources.contains(name) { return 0 }
+        guard let db else { return 0 }
+        let existing = (try? db.rows("SELECT \(Self.customerColumns) FROM customers") { Self.customer($0) }) ?? []
+        if let hit = existing.first(where: { $0.matches(guest: name, phone: number) }) {
+            if Customer.normalize(hit.phone).isEmpty && !number.isEmpty {
+                try? db.run("UPDATE customers SET phone=? WHERE id=?", [.text(number), .int(hit.id)])
+            }
+            return hit.id
+        }
         try? db.run("INSERT INTO customers(name,phone) VALUES(?,?)", [.text(name), .text(number)])
+        return (try? db.rows("SELECT last_insert_rowid()") { $0.int(0) })?.first ?? 0
     }
 
     /// Makes sure every guest in the bookings (for example after a restore) has a customer entry.
@@ -113,9 +165,10 @@ final class Store {
     }
 
     func save(_ c: Customer) {
-        let args: [Arg] = [.text(c.name), .text(Customer.normalize(c.phone)), .text(c.city), .text(c.idProof), .text(c.notes)]
+        let image: Arg = c.idImage.map { Arg.blob($0) } ?? .null
+        let args: [Arg] = [.text(c.name), .text(Customer.normalize(c.phone)), .text(c.city), .text(c.idProof), .text(c.notes), image]
         if c.id == 0 {
-            write("INSERT INTO customers(name,phone,city,id_proof,notes) VALUES(?,?,?,?,?)", args)
+            write("INSERT INTO customers(name,phone,city,id_proof,notes,id_img) VALUES(?,?,?,?,?,?)", args)
         } else {
             // keep the guest's bookings attached if the name or number changed
             if let old = customers.first(where: { $0.id == c.id }) {
@@ -123,7 +176,7 @@ final class Store {
                     try? db?.run("UPDATE bookings SET guest=?,phone=? WHERE id=?", [.text(c.name), .text(Customer.normalize(c.phone)), .int(b.id)])
                 }
             }
-            write("UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=? WHERE id=?", args + [.int(c.id)])
+            write("UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=?,id_img=? WHERE id=?", args + [.int(c.id)])
         }
     }
 
@@ -207,7 +260,7 @@ final class Store {
         do {
             try fm.copyItem(at: picked, to: temp)
             let check = try SQLiteDB(path: temp.path)
-            try check.script(Self.schema)
+            try Self.prepare(check)
             _ = try check.rows("SELECT count(*) FROM bookings") { $0.int(0) }
             _ = try check.rows("SELECT count(*) FROM expenses") { $0.int(0) }
         } catch {

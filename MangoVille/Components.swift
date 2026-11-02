@@ -1,4 +1,15 @@
 import SwiftUI
+import UIKit
+
+/// Shrinks an Aadhaar photo so the database stays small (about 100–200 KB each).
+func compressedJPEG(_ data: Data) -> Data? {
+    guard let image = UIImage(data: data) else { return nil }
+    let longest = max(image.size.width, image.size.height)
+    let scale = min(1, 1200 / max(longest, 1))
+    let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    let rendered = UIGraphicsImageRenderer(size: size).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    return rendered.jpegData(compressionQuality: 0.6)
+}
 
 enum Theme {
     static let green = Color(red: 0.12, green: 0.37, blue: 0.23)
@@ -102,7 +113,7 @@ struct BookingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(booking.guest.isEmpty ? "Guest" : booking.guest).font(.body.weight(.semibold))
                 Text((showDate ? Fmt.short(booking.start) + " · " : "")
-                     + "\(booking.nights) night\(booking.nights > 1 ? "s" : "") · \(booking.source)")
+                     + "\(booking.nights) night\(booking.nights > 1 ? "s" : "") · \(booking.guests) guests · \(booking.source)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
