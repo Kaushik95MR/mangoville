@@ -1,6 +1,0 @@
-{
-  "appId": "com.mangoville.bookings",
-  "appName": "Mango Ville",
-  "webDir": "www",
-  "ios": { "contentInset": "never" }
-}
