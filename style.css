@@ -1,0 +1,41 @@
+:root{--bg:#fbf7ee;--card:#fff;--ink:#222;--mute:#7a7467;--line:#e8e1d0;--green:#2f6b3a;--paid:#cfe8c9;--paidink:#1d4d27;--due:#ffd98a;--dueink:#7a4b00;--red:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#161a14;--card:#20261d;--ink:#eee;--mute:#9aa38f;--line:#323a2d;--green:#6fbf7d;--paid:#264d2c;--paidink:#bfe8c6;--due:#5e4510;--dueink:#ffd98a}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,system-ui,sans-serif}
+body{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px}
+header h1{font-size:20px;margin:0}
+header button{font-size:28px;width:44px;height:44px;border:0;background:none;color:var(--green)}
+main{flex:1;overflow-y:auto;padding:0 12px 16px}
+nav{display:flex;border-top:1px solid var(--line);background:var(--card);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:14px 0;border:0;background:none;font-size:15px;color:var(--mute)}
+nav button.on{color:var(--green);font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.dow{text-align:center;font-size:12px;color:var(--mute);padding:4px 0}
+.day{min-height:62px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px;font-size:12px;text-align:left;color:var(--ink);overflow:hidden;display:flex;flex-direction:column;gap:2px}
+.day.blank{background:none;border:0}
+.day b{font-size:13px;font-weight:600}
+.day.today b{background:var(--green);color:#fff;border-radius:9px;padding:0 6px;align-self:flex-start}
+.chip{border-radius:5px;padding:1px 4px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.paid{background:var(--paid);color:var(--paidink)}.chip.due{background:var(--due);color:var(--dueink)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute);margin:10px 2px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat small{display:block;color:var(--mute);font-size:12px}.stat strong{font-size:20px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-bottom:0;color:var(--ink);text-align:left;font:inherit}
+.row:first-of-type{border-top:0}
+.row span small{display:block;color:var(--mute);font-size:12px}
+.amt{font-weight:600;white-space:nowrap}.neg{color:var(--red)}
+.empty{color:var(--mute);text-align:center;padding:24px 0}
+.btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:var(--green);color:#fff;font-size:16px;font-weight:600;margin-top:10px}
+.btn.alt{background:none;color:var(--green);border:1px solid var(--green)}.btn.del{background:none;color:var(--red);border:1px solid var(--red)}
+#sheet{position:fixed;inset:0;z-index:5}.scrim{position:absolute;inset:0;background:#0006}
+.panel{position:absolute;left:0;right:0;bottom:0;max-height:92%;overflow-y:auto;background:var(--bg);border-radius:18px 18px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom))}
+.panel h3{margin:0 0 8px;font-size:18px}
+label{display:block;font-size:12px;color:var(--mute);margin:10px 0 3px}
+input,select,textarea{width:100%;padding:11px;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:16px;color:var(--ink)}.check input{width:22px;height:22px}
+.fab{position:sticky;bottom:8px;float:right;width:56px;height:56px;border-radius:28px;border:0;background:var(--green);color:#fff;font-size:30px;box-shadow:0 3px 10px #0004}

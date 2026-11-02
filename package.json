@@ -1,0 +1,11 @@
+{
+  "name": "mango-ville",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "build": "node scripts/build-www.js" },
+  "dependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  }
+}

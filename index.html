@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mango Ville</title>
+<meta name="theme-color" content="#2f6b3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mango Ville">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <button id="prev" aria-label="Previous month">‹</button>
+  <h1 id="title"></h1>
+  <button id="next" aria-label="Next month">›</button>
+</header>
+<main id="view"></main>
+<nav>
+  <button data-tab="cal" class="on">Calendar</button>
+  <button data-tab="exp">Expenses</button>
+  <button data-tab="sum">Summary</button>
+</nav>
+<div id="sheet" hidden><div class="scrim"></div><div class="panel" id="panel"></div></div>
+<script src="vendor/sql-wasm.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "Mango Ville",
+  "short_name": "Mango Ville",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf7ee",
+  "theme_color": "#2f6b3a",
+  "icons": [{ "src": "icon-180.png", "sizes": "180x180", "type": "image/png" }]
+}
