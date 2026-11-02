@@ -2,7 +2,6 @@ name: Build iPhone app
 on:
   workflow_dispatch:
   push:
-    branches: [main]
 jobs:
   ios:
     runs-on: macos-latest
