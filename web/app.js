@@ -29,7 +29,7 @@ function allCats(selected) {
   const list = [...new Set([...CATEGORIES, ...extra, ...used, selected].filter(Boolean))].filter(c => c !== 'Other');
   return [...list, 'Other'];
 }
-const catChips = sel => allCats(sel).map(o => `<button type="button" class="${o === sel ? 'on' : ''}">${esc(o)}</button>`).join('');
+const catChips = sel => allCats(sel).map(o => `<button type="button" data-v="${esc(o)}" class="${o === sel ? 'on' : ''}">${emo(o)} ${esc(o)}</button>`).join('');
 const PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
 let db, tab = 'cal', custQuery = '';
@@ -46,6 +46,15 @@ const monthKey = () => `${cur.y}-${pad(cur.m + 1)}`;
 const inr = n => (n < 0 ? '-' : '') + '₹' + Math.abs(Math.round(n || 0)).toLocaleString('en-IN');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nice = (s, long) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-IN', long ? { weekday: 'long', day: 'numeric', month: 'long' } : { day: 'numeric', month: 'short' }); };
+const EMO = { Direct: '📞', Airbnb: '🏡', 'Booking.com': '🌐', Referral: '🤝', Other: '✨', 'Caretaker / Salary': '👷', Electricity: '⚡', Water: '💧', Housekeeping: '🧹', Maintenance: '🔧', Supplies: '🛒', Marketing: '📣', Gas: '🔥' };
+const emo = o => EMO[o] || '🏷️';
+const avatar = (name, big) => {
+  const n = String(name ?? '').trim();
+  let hue = 0; for (const c of n) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+  const ini = n.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '👤';
+  return `<span class="av${big ? ' big' : ''}" style="--h:${hue}">${esc(ini)}</span>`;
+};
+const emptyState = (icon, title, hint) => `<div class="empty"><div class="eico">${icon}</div><b>${title}</b><small>${hint}</small></div>`;
 const q = (sql, p = []) => { const st = db.prepare(sql); st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
 const run = (sql, p = []) => { db.run(sql, p); persist(); };
 const due = b => (b.settled ? 0 : Math.max(0, b.total - b.advance));
@@ -99,13 +108,27 @@ function render() {
   ({ cal: renderCal, exp: renderExp, sum: renderSum, cus: renderCus })[tab]();
 }
 
+function todayCard() {
+  const t = todayISO();
+  if (monthKey() !== t.slice(0, 7)) return '';
+  const cover = q('SELECT * FROM bookings WHERE start<=? AND date(start,"+"||nights||" day")>? ORDER BY start', [t, t]);
+  if (cover.length) {
+    const b = cover[0], d = due(b);
+    return `<button class="tonight in" data-id="${b.id}">${avatar(b.guest || b.source, true)}<span class="grow"><small>Tonight</small><b>${esc(b.guest || b.source)} is staying</b>
+      <small>${esc(b.guests || 1)} guests · check-out ${esc(nice(addDays(b.start, b.nights)))}, ${esc(clock12(b.checkout_time))}</small></span>${d ? `<span class="pill due">Due ${inr(d)}</span>` : '<span class="pill paid">Paid</span>'}</button>`;
+  }
+  const nx = q('SELECT * FROM bookings WHERE start>? ORDER BY start LIMIT 1', [t])[0];
+  return `<div class="tonight free"><span class="dot"></span><span class="grow"><small>Tonight</small><b>The villa is available</b>
+    <small>${nx ? 'Next: ' + esc(nx.guest || nx.source) + ' · ' + esc(nice(nx.start)) : 'No upcoming bookings yet'}</small></span></div>`;
+}
+
 function renderCal() {
   const dim = new Date(cur.y, cur.m + 1, 0).getDate(), lead = (new Date(cur.y, cur.m, 1).getDay() + 6) % 7, k = monthKey();
   const bs = q('SELECT * FROM bookings WHERE start<=? AND date(start,"+"||nights||" day")>? ORDER BY start,id', [iso(cur.y, cur.m, dim), iso(cur.y, cur.m, 1)]);
   const per = {};
   bs.forEach(b => { for (let i = 0; i < b.nights; i++) { const d = addDays(b.start, i); if (d.startsWith(k)) (per[d] ||= []).push(b); } });
   const s = monthStats(), today = todayISO();
-  let h = `<div class="snap"><div><small>Revenue</small><strong>${inr(s.revenue)}</strong></div><div><small>Profit</small><strong class="${s.net < 0 ? 'neg' : ''}">${inr(s.net)}</strong></div><div><small>Booked</small><strong>${s.occupied}/${s.dim}</strong></div><div><small>Due</small><strong class="${s.pending ? 'neg' : ''}">${inr(s.pending)}</strong></div></div>`;
+  let h = todayCard() + `<div class="snap"><div><small>Revenue</small><strong>${inr(s.revenue)}</strong></div><div><small>Profit</small><strong class="${s.net < 0 ? 'neg' : ''}">${inr(s.net)}</strong></div><div><small>Booked</small><strong>${s.occupied}/${s.dim}</strong></div><div><small>Due</small><strong class="${s.pending ? 'neg' : ''}">${inr(s.pending)}</strong></div></div>`;
   h += '<div class="cal"><div class="grid">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => `<div class="dow">${d}</div>`).join('');
   for (let i = 0; i < lead; i++) h += '<div class="day blank"></div>';
   for (let d = 1; d <= dim; d++) {
@@ -124,12 +147,13 @@ function renderCal() {
   h += `<button class="fab" id="addB" aria-label="New booking">${PLUS}</button>`;
   $('#view').innerHTML = h;
   document.querySelectorAll('.day[data-date]').forEach(b => b.onclick = () => openDay(b.dataset.date));
+  document.querySelectorAll('#view .tonight[data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
   $('#addB').onclick = () => bookingForm(null, today.startsWith(k) ? today : iso(cur.y, cur.m, 1));
 }
 
 function bookingRow(b, showDate) {
   const d = due(b);
-  return `<button class="row" data-id="${b.id}"><span><b>${esc(b.guest || 'Guest')}</b><small>${showDate ? esc(nice(b.start)) + ' · ' : ''}${esc(b.nights)} night${b.nights > 1 ? 's' : ''}${b.guests ? ' · ' + esc(b.guests) + ' guests' : ''} · ${esc(b.source)}</small></span>
+  return `<button class="row" data-id="${b.id}">${avatar(b.guest || b.source)}<span class="grow"><b>${esc(b.guest || 'Guest')}</b><small>${showDate ? esc(nice(b.start)) + ' · ' : ''}${esc(b.nights)} night${b.nights > 1 ? 's' : ''}${b.guests ? ' · ' + esc(b.guests) + ' guests' : ''} · ${esc(b.source)}</small></span>
   <span class="amt">${inr(b.total)}<br><span class="pill ${d ? 'due' : 'paid'}">${d ? 'Due ' + inr(d) : 'Paid'}</span></span></button>`;
 }
 
@@ -137,7 +161,7 @@ function renderExp() {
   const s = monthStats();
   $('#view').innerHTML = `<div class="hero"><small>Spent this month</small><strong>${inr(s.expenses)}</strong></div>
   <div class="card">${s.exp.length ? [...s.exp].sort((a, b) => b.date.localeCompare(a.date)).map(e =>
-    `<button class="row" data-eid="${e.id}"><span><b>${esc(e.description || e.category)}</b><small>${esc(nice(e.date))} · ${esc(e.category)}</small></span><span class="amt">${inr(e.amount)}</span></button>`).join('') : '<div class="empty">No expenses this month</div>'}</div>
+    `<button class="row" data-eid="${e.id}"><span class="av cat">${emo(e.category)}</span><span class="grow"><b>${esc(e.description || e.category)}</b><small>${esc(nice(e.date))} · ${esc(e.category)}</small></span><span class="amt">${inr(e.amount)}</span></button>`).join('') : emptyState('🧾', 'No expenses this month', 'Tap + to log electricity, supplies or salaries — profit updates instantly.')}</div>
   <button class="fab" id="addExp" aria-label="Add expense">${PLUS}</button>`;
   $('#addExp').onclick = () => expenseForm();
   document.querySelectorAll('[data-eid]').forEach(b => b.onclick = () => expenseForm(+b.dataset.eid));
@@ -147,7 +171,7 @@ function renderSum() {
   const s = monthStats();
   const dues = q('SELECT * FROM bookings WHERE settled=0 AND total>advance ORDER BY start');
   const stat = (l, v, cls = '') => `<div class="stat"><small>${l}</small><strong class="${cls}">${v}</strong></div>`;
-  $('#view').innerHTML = `<div class="hero"><small>Net profit</small><strong>${inr(s.net)}</strong></div>
+  $('#view').innerHTML = `<div class="hero"><small>Net profit</small><strong>${inr(s.net)}</strong><div class="bar"><i style="width:${Math.min(100, Math.round(100 * s.occupied / s.dim))}%"></i></div><small>${s.occupied} of ${s.dim} nights booked</small></div>
   <div class="card"><div class="stats">
     ${stat('Revenue', inr(s.revenue))}${stat('Collected', inr(s.collected))}
     ${stat('Balance due', inr(s.pending), s.pending ? 'neg' : '')}${stat('Occupancy', Math.round(100 * s.occupied / s.dim) + '%')}
@@ -195,9 +219,9 @@ function custRows() {
 }
 function drawCus() {
   const rows = custRows();
-  $('#clist').innerHTML = rows.length ? rows.map(r => `<button class="row" data-cid="${r.c.id}"><span><b>${esc(r.c.name || r.c.phone || 'Unnamed')}</b>
+  $('#clist').innerHTML = rows.length ? rows.map(r => `<button class="row" data-cid="${r.c.id}">${avatar(r.c.name || r.c.phone)}<span class="grow"><b>${esc(r.c.name || r.c.phone || 'Unnamed')}</b>
     <small>${r.c.id_img ? '✓ ID · ' : ''}${esc(r.c.phone)}${r.c.city ? ' · ' + esc(r.c.city) : ''} · ${r.bs.length} stay${r.bs.length === 1 ? '' : 's'}${r.last ? ' · last ' + esc(nice(r.last)) : ''}</small></span>
-    <span class="amt">${inr(r.spent)}${r.owed ? `<br><span class="pill due">Due ${inr(r.owed)}</span>` : ''}</span></button>`).join('') : '<div class="empty">No customers found</div>';
+    <span class="amt">${inr(r.spent)}${r.owed ? `<br><span class="pill due">Due ${inr(r.owed)}</span>` : ''}</span></button>`).join('') : emptyState('👥', 'No customers found', 'Guests are added automatically when you save a booking, or tap + to add one.');
   document.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => customerForm(+b.dataset.cid));
 }
 function renderCus() {
@@ -247,13 +271,13 @@ function sheet(html) {
 }
 function closeSheet() { $('#sheet').hidden = true; render(); }
 $('.scrim').onclick = closeSheet;
-const seg = (id, opts, v) => `<div class="seg" id="${id}">${opts.map(o => `<button type="button" class="${o === v ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`;
+const seg = (id, opts, v) => `<div class="seg" id="${id}">${opts.map(o => `<button type="button" data-v="${esc(o)}" class="${o === v ? 'on' : ''}">${emo(o)} ${esc(o)}</button>`).join('')}</div>`;
 function wireSeg(id) { const el = $('#' + id); el.onclick = e => { const b = e.target.closest('button'); if (!b) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }; }
-const segVal = id => $('#' + id + ' .on')?.textContent;
+const segVal = id => $('#' + id + ' .on')?.dataset.v;
 
 function openDay(date) {
   const list = q('SELECT * FROM bookings WHERE start<=? AND date(start,"+"||nights||" day")>? ORDER BY start,id', [date, date]);
-  sheet(`<h3>${esc(nice(date, true))}</h3><div class="list">${list.length ? list.map(b => bookingRow(b)).join('') : '<div class="empty">Available — no booking</div>'}</div>
+  sheet(`<h3>${esc(nice(date, true))}</h3><div class="list">${list.length ? list.map(b => bookingRow(b)).join('') : emptyState('🌿', 'Available', 'Nobody is booked for this day. Add a booking below.')}</div>
     <button class="btn" id="add">New booking</button>`);
   $('#add').onclick = () => bookingForm(null, date);
   document.querySelectorAll('#panel [data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
@@ -273,10 +297,10 @@ function bookingText(b) {
     bal ? `Balance due: ${inr(bal)}` : 'Payment: fully paid ✓', '',
     `Thank you for choosing ${VILLA}. We look forward to hosting you!`].join('\n');
 }
-function shareBooking(id) {
+function shareBooking(id, fresh) {
   const b = q('SELECT * FROM bookings WHERE id=?', [id])[0]; if (!b) return;
   const text = bookingText(b), bal = due(b);
-  sheet(`<h3>Booking details</h3>
+  sheet(`${fresh ? '<div class="done"><span class="tick">✓</span><h3>Booking confirmed</h3><small>Send these details to your guest</small></div>' : '<h3>Booking details</h3>'}
   <div class="card" style="margin-top:10px"><h2>${esc(VILLA)} · confirmation</h2>
     <div class="row"><span>Guest</span><span class="amt">${esc(b.guest || 'Guest')}</span></div>
     <div class="row"><span>Check-in</span><span class="amt">${esc(stamp(b.start, b.checkin_time))}</span></div>
@@ -363,7 +387,7 @@ function bookingForm(id, date) {
     else { run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', p); bid = q('SELECT max(id) m FROM bookings')[0].m; }
     const [y, m] = v.start.split('-').map(Number); cur = { y, m: m - 1 };
     closeSheet();
-    if (!id) shareBooking(bid);
+    if (!id) shareBooking(bid, true);
   };
   if (id) $('#shareb').onclick = () => shareBooking(id);
   if (id) $('#del').onclick = () => { if (confirm('Delete this booking?')) { run('DELETE FROM bookings WHERE id=?', [id]); closeSheet(); } };

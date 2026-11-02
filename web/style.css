@@ -70,3 +70,36 @@ input:focus,textarea:focus{outline:2px solid var(--green);outline-offset:-1px}
 .mini{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--green);cursor:pointer}
 
 .x{position:sticky;top:0;float:right;width:36px;height:36px;border:0;border-radius:18px;background:var(--line);color:var(--ink);font-size:24px;line-height:1;z-index:2;margin:-2px 0 0 8px}
+
+/* ---- polish pass: type scale 12/15/17/30, weights 500/700, 8-pt spacing, tinted shadows ---- */
+:root{--shadow:0 1px 2px #1f5e3b14,0 8px 24px #1f5e3b14;--ring:inset 0 1px 0 #ffffff40}
+@media (prefers-color-scheme:dark){:root{--shadow:none}}
+body{font-size:15px;line-height:1.45}
+.monthbar h1{font-size:28px;font-weight:700}
+.card,.cal,.snap{box-shadow:var(--shadow)}
+.card{padding:16px;margin:16px 0;border-radius:20px}
+.btn{background:linear-gradient(180deg,color-mix(in srgb,var(--green) 88%,#fff),var(--green));box-shadow:var(--ring),0 6px 16px #1f5e3b33;padding:16px;font-weight:700}
+.btn.alt,.btn.del{background:var(--green2);box-shadow:none}.btn.del{background:none}
+.fab{box-shadow:var(--ring),0 10px 24px #1f5e3b55}
+.row{padding:16px 0;gap:16px}
+.row b{font-weight:700;font-size:15px}.row small{font-size:12px;margin-top:2px}
+.grow{flex:1;min-width:0;display:block;text-align:left}
+.amt{font-size:15px;font-weight:700}
+.av{flex:none;width:40px;height:40px;border-radius:20px;display:grid;place-items:center;font-size:14px;font-weight:700;color:hsl(var(--h) 45% 28%);background:hsl(var(--h) 60% 90%)}
+.av.big{width:48px;height:48px;border-radius:24px;font-size:17px}
+.av.cat{font-size:18px;background:var(--green2);color:inherit}
+@media (prefers-color-scheme:dark){.av{color:hsl(var(--h) 70% 85%);background:hsl(var(--h) 35% 24%)}}
+.tonight{display:flex;align-items:center;gap:16px;width:100%;text-align:left;border:0;background:var(--card);border-radius:20px;padding:16px;margin:8px 0 16px;box-shadow:var(--shadow);font:inherit;color:var(--ink)}
+.tonight b{display:block;font-size:17px;font-weight:700}.tonight small{display:block;color:var(--mute);font-size:12px}
+.tonight.in{background:linear-gradient(135deg,var(--paid),var(--card))}
+.tonight .dot{flex:none;width:12px;height:12px;border-radius:6px;background:#2f80ed;box-shadow:0 0 0 6px #2f80ed26}
+.hero{background:linear-gradient(135deg,color-mix(in srgb,var(--green) 80%,#000),var(--green));box-shadow:0 12px 28px #1f5e3b44,var(--ring);padding:24px 24px 24px}
+.hero strong{font-size:34px;font-weight:700;margin:4px 0 16px}
+.bar{height:8px;border-radius:4px;background:#ffffff30;overflow:hidden;margin:0 0 8px}.bar i{display:block;height:100%;border-radius:4px;background:#fff}
+.empty{padding:32px 16px}.empty .eico{font-size:36px;margin-bottom:8px}.empty b{display:block;color:var(--ink);font-size:17px}.empty small{display:block;margin-top:4px;font-size:12px}
+.done{text-align:center;padding:8px 0 4px}.done h3{font-size:22px;margin:8px 0 4px}.done small{color:var(--mute)}
+.tick{display:inline-grid;place-items:center;width:56px;height:56px;border-radius:28px;background:var(--green);color:var(--onGreen);font-size:30px;font-weight:700;box-shadow:0 0 0 8px var(--green2),0 8px 24px #1f5e3b55;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+.seg button{padding:8px 16px;font-size:15px}
+label.l{margin:16px 0 8px}
+@media (prefers-reduced-motion:reduce){.tick{animation:none}}
