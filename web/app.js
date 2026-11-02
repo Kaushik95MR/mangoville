@@ -78,7 +78,7 @@ function renderCal() {
     let info = '';
     if (b) {
       info = `<small>${esc((b.guest || b.source).split(' ')[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}</small>`;
-      if (b.start === date) info += `${b.phone ? `<small>${esc(b.phone)}</small>` : ''}<small>T ${b.total}</small><small>A ${b.advance}</small><small class="${due(b) ? 'dueamt' : ''}">${due(b) ? 'D ' + due(b) : 'Paid'}</small>`;
+      if (b.start === date) info += `${b.phone ? `<small>${esc(b.phone)}</small>` : ''}<small>T ${esc(b.total)}</small><small>A ${esc(b.advance)}</small><small class="${due(b) ? 'dueamt' : ''}">${due(b) ? 'D ' + esc(due(b)) : 'Paid'}</small>`;
       else info += '<small>↳ stay</small>';
     }
     h += `<button class="day ${cls}${date === today ? ' today' : ''}" data-date="${date}">${d}${info}</button>`;
