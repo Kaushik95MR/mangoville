@@ -1,3 +1,4 @@
 build
 *.xcodeproj
 node_modules
+dist

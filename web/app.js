@@ -422,7 +422,7 @@ async function boot() {
   let saved = await idbGet();
   if (!saved) {
     // first launch: start from the bundled history
-    try { const r = await fetch('seed.sqlite'); if (r.ok) saved = new Uint8Array(await r.arrayBuffer()); } catch (e) { }
+    try { const r = await fetch('seed.sqlite'); if (r.ok) { const b = new Uint8Array(await r.arrayBuffer()); if (String.fromCharCode(...b.slice(0, 15)) === 'SQLite format 3') saved = b; } } catch (e) { }
   }
   db = saved ? new SQL.Database(saved) : new SQL.Database();
   db.exec(SCHEMA);
