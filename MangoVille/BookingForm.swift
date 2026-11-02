@@ -13,6 +13,8 @@ struct BookingForm: View {
     @State private var newID: Data?
     @State private var pickerItem: PhotosPickerItem?
     @State private var confirmDelete = false
+    @State private var confirmation: Booking?
+    @State private var saved = false
 
     init(booking: Booking) {
         _booking = State(initialValue: booking)
@@ -116,6 +118,7 @@ struct BookingForm: View {
                         if !booking.phone.isEmpty, let url = URL(string: "tel:\(booking.phone.filter { $0.isNumber || $0 == "+" })") {
                             Link(destination: url) { Label("Call guest", systemImage: "phone.fill") }
                         }
+                        Button { confirmation = booking } label: { Label("Share booking details", systemImage: "square.and.arrow.up") }
                         Button("Delete booking", role: .destructive) { confirmDelete = true }
                     }
                 }
@@ -132,6 +135,7 @@ struct BookingForm: View {
                     dismiss()
                 }
             }
+            .sheet(item: $confirmation, onDismiss: { if saved { dismiss() } }) { BookingConfirmation(booking: $0) }
             .onChange(of: pickerItem) { _, item in
                 Task {
                     if let raw = try? await item?.loadTransferable(type: Data.self), let jpeg = compressedJPEG(raw) {
@@ -187,7 +191,14 @@ struct BookingForm: View {
         b.advance = advance
         b.guest = b.guest.trimmingCharacters(in: .whitespaces)
         b.phone = Customer.normalize(b.phone)
-        store.save(b, idImage: newID)
-        dismiss()
+        let wasNew = b.id == 0
+        b.id = store.save(b, idImage: newID)
+        if wasNew {
+            // new booking: show the confirmation to send to the guest, then close the form
+            saved = true
+            confirmation = b
+        } else {
+            dismiss()
+        }
     }
 }

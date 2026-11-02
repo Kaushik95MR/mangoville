@@ -68,3 +68,5 @@ input:focus,textarea:focus{outline:2px solid var(--green);outline-offset:-1px}
 .idcard img{width:64px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .idcard.ok b{color:var(--green)}.idcard.up{flex-direction:column;align-items:flex-start;border:1.5px dashed var(--green);cursor:pointer}.idcard.up b{color:var(--green)}
 .mini{display:inline-block;margin-top:4px;font-size:13px;font-weight:600;color:var(--green);cursor:pointer}
+
+.x{position:sticky;top:0;float:right;width:36px;height:36px;border:0;border-radius:18px;background:var(--line);color:var(--ink);font-size:24px;line-height:1;z-index:2;margin:-2px 0 0 8px}

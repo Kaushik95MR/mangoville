@@ -23,6 +23,27 @@ struct Booking: Identifiable, Hashable {
     }
 }
 
+extension Booking {
+    /// Plain-text confirmation to send to the guest (WhatsApp-friendly).
+    func confirmationText(villa: String = "Mango Ville") -> String {
+        let out = Clock.combine(day: DateKey.add(start, max(1, nights)), time: checkOutTime)
+        let into = Clock.combine(day: start, time: checkInTime)
+        let when = Date.FormatStyle().weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()
+        var lines = [
+            "*Booking confirmation — \(villa)*", "",
+            "Guest: \(guest.isEmpty ? "Guest" : guest)",
+            "Check-in: \(into.formatted(when))",
+            "Check-out: \(out.formatted(when))",
+            "Stay: \(nights) night\(nights > 1 ? "s" : "") · \(guests) guest\(guests > 1 ? "s" : "")", "",
+            "Total: \(Fmt.inr(total))",
+            "Advance paid: \(Fmt.inr(advance))",
+        ]
+        lines.append(due > 0 ? "Balance due: \(Fmt.inr(due))" : "Payment: fully paid ✓")
+        lines += ["", "Thank you for choosing \(villa). We look forward to hosting you!"]
+        return lines.joined(separator: "\n")
+    }
+}
+
 struct Expense: Identifiable, Hashable {
     var id = 0
     var date: String

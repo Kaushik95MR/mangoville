@@ -105,7 +105,8 @@ final class Store {
     // MARK: Bookings
 
     /// Saves the booking and keeps the guest's address-book entry (and Aadhaar photo, if one was added) in step.
-    func save(_ b: Booking, idImage: Data? = nil) {
+    @discardableResult
+    func save(_ b: Booking, idImage: Data? = nil) -> Int {
         let customerID = ensureCustomer(guest: b.guest, phone: b.phone)
         if let idImage, customerID != 0 {
             try? db?.run("UPDATE customers SET id_img=? WHERE id=?", [.blob(idImage), .int(customerID)])
@@ -118,7 +119,9 @@ final class Store {
         } else {
             write("UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=?,checkin_time=?,checkout_time=?,guests=? WHERE id=?",
                   args + [.int(b.id)])
+            return b.id
         }
+        return bookings.map(\.id).max() ?? 0
     }
 
     /// The one saved customer matching this name / phone, if there is exactly one.

@@ -56,7 +56,7 @@ function ensureCustomer(name, phone) {
     return hit.id;
   }
   db.run('INSERT INTO customers(name,phone) VALUES(?,?)', [name, np(phone)]);
-  return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+  return q('SELECT max(id) m FROM customers')[0].m;
 }
 function backfillCustomers() { q('SELECT guest,phone FROM bookings').forEach(b => ensureCustomer(b.guest, b.phone)); persist(); }
 const fixedCost = () => +q('SELECT value FROM settings WHERE key="fixed_cost"')[0].value || 0;
@@ -231,7 +231,11 @@ function customerForm(id) {
 }
 
 /* ---------- bottom sheet ---------- */
-function sheet(html) { $('#panel').innerHTML = html; $('#sheet').hidden = false; $('#panel').scrollTop = 0; }
+function sheet(html) {
+  $('#panel').innerHTML = `<button class="x" id="xclose" aria-label="Close">×</button>` + html;
+  $('#xclose').onclick = closeSheet;
+  $('#sheet').hidden = false; $('#panel').scrollTop = 0;
+}
 function closeSheet() { $('#sheet').hidden = true; render(); }
 $('.scrim').onclick = closeSheet;
 const seg = (id, opts, v) => `<div class="seg" id="${id}">${opts.map(o => `<button type="button" class="${o === v ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`;
@@ -246,6 +250,42 @@ function openDay(date) {
   document.querySelectorAll('#panel [data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
 }
 
+const VILLA = 'Mango Ville';
+const clock12 = t => { const [h, m] = String(t || '12:00').split(':').map(Number); return `${h % 12 || 12}:${pad(m || 0)} ${h < 12 ? 'AM' : 'PM'}`; };
+const stamp = (d, t) => { const [y, m, dd] = d.split('-').map(Number); return `${new Date(y, m - 1, dd).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}, ${clock12(t)}`; };
+function bookingText(b) {
+  const bal = due(b);
+  return [`*Booking confirmation — ${VILLA}*`, '',
+    `Guest: ${b.guest || 'Guest'}`,
+    `Check-in: ${stamp(b.start, b.checkin_time)}`,
+    `Check-out: ${stamp(addDays(b.start, b.nights), b.checkout_time)}`,
+    `Stay: ${b.nights} night${b.nights > 1 ? 's' : ''} · ${b.guests || 1} guest${b.guests > 1 ? 's' : ''}`, '',
+    `Total: ${inr(b.total)}`, `Advance paid: ${inr(b.advance)}`,
+    bal ? `Balance due: ${inr(bal)}` : 'Payment: fully paid ✓', '',
+    `Thank you for choosing ${VILLA}. We look forward to hosting you!`].join('\n');
+}
+function shareBooking(id) {
+  const b = q('SELECT * FROM bookings WHERE id=?', [id])[0]; if (!b) return;
+  const text = bookingText(b), bal = due(b);
+  sheet(`<h3>Booking details</h3>
+  <div class="card" style="margin-top:10px"><h2>${esc(VILLA)} · confirmation</h2>
+    <div class="row"><span>Guest</span><span class="amt">${esc(b.guest || 'Guest')}</span></div>
+    <div class="row"><span>Check-in</span><span class="amt">${esc(stamp(b.start, b.checkin_time))}</span></div>
+    <div class="row"><span>Check-out</span><span class="amt">${esc(stamp(addDays(b.start, b.nights), b.checkout_time))}</span></div>
+    <div class="row"><span>Stay</span><span class="amt">${esc(b.nights)} night${b.nights > 1 ? 's' : ''} · ${esc(b.guests || 1)} guests</span></div>
+    <div class="row"><span>Total</span><span class="amt">${inr(b.total)}</span></div>
+    <div class="row"><span>Advance</span><span class="amt">${inr(b.advance)}</span></div>
+    <div class="row"><span>${bal ? 'Balance due' : 'Payment'}</span><span class="amt ${bal ? 'neg' : ''}">${bal ? inr(bal) : 'Fully paid'}</span></div></div>
+  <button class="btn" id="sh_share">Share</button>
+  <a class="btn alt" id="sh_wa" target="_blank" rel="noopener" href="https://wa.me/${np(b.phone) ? '91' + np(b.phone) : ''}?text=${encodeURIComponent(text)}">Send on WhatsApp</a>
+  <button class="btn alt" id="sh_copy">Copy text</button>`);
+  $('#sh_share').onclick = async () => {
+    try { if (navigator.share) return await navigator.share({ title: VILLA + ' booking', text }); } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); alert('Sharing is not available here — details copied.'); } catch (e) { alert(text); }
+  };
+  $('#sh_copy').onclick = async () => { try { await navigator.clipboard.writeText(text); $('#sh_copy').textContent = 'Copied ✓'; } catch (e) { alert(text); } };
+}
+
 const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
 function bookingForm(id, date) {
@@ -253,10 +293,9 @@ function bookingForm(id, date) {
   const st = { stored: null, pending: null };
   const custs = q('SELECT id,name,phone,id_img FROM customers');
   sheet(`<h3>${id ? 'Edit booking' : 'New booking'}</h3>
-  <label class="l">Guest</label><input id="f_guest" list="custlist" placeholder="Name — returning guests load automatically" value="${esc(b.guest)}" autocomplete="off">
-  <datalist id="custlist">${custs.filter(c => c.name).map(c => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join('')}</datalist>
-  <label class="l">Phone</label><input id="f_phone" type="tel" list="phlist" placeholder="Mobile number" value="${esc(b.phone)}">
-  <datalist id="phlist">${custs.filter(c => c.phone).map(c => `<option value="${esc(c.phone)}">${esc(c.name)}</option>`).join('')}</datalist>
+  <label class="l">Guest name</label><input id="f_guest" placeholder="Name" value="${esc(b.guest)}" autocomplete="off">
+  <div id="sug" class="seg" style="margin-top:8px"></div>
+  <label class="l">Phone</label><input id="f_phone" type="tel" placeholder="Mobile number" value="${esc(b.phone)}">
   <div id="idbox" style="margin-top:10px"></div>
   <div class="two"><div><label class="l">Check-in</label><input id="f_start" type="date" value="${esc(b.start)}"></div><div><label class="l">Time</label><input id="f_in" type="time" value="${esc(b.checkin_time || '14:00')}"></div></div>
   <div class="two"><div><label class="l">Check-out</label><input id="f_end" type="date" value="${esc(addDays(b.start, b.nights))}"></div><div><label class="l">Time</label><input id="f_out" type="time" value="${esc(b.checkout_time || '11:00')}"></div></div>
@@ -267,6 +306,7 @@ function bookingForm(id, date) {
   <label class="switch" style="margin-top:14px"><input id="f_settled" type="checkbox"${b.settled ? ' checked' : ''}> Fully paid</label>
   <label class="l">Notes</label><textarea id="f_notes" rows="2">${esc(b.notes)}</textarea>
   <button class="btn" id="save">Save</button>
+  ${id ? '<button class="btn alt" id="shareb">Share booking details</button>' : ''}
   ${id && b.phone ? `<a class="btn alt" href="tel:${esc(b.phone)}">Call guest</a>` : ''}
   ${id ? '<button class="btn del" id="del">Delete booking</button>' : ''}`);
   wireSeg('f_source');
@@ -281,8 +321,18 @@ function bookingForm(id, date) {
     st.stored = c ? c.id_img || null : null;
     paintId($('#idbox'), st);
   };
-  $('#f_guest').onchange = lookup;
-  $('#f_phone').oninput = () => { if (np($('#f_phone').value).length >= 10) lookup(); };
+  // previous guests matching what is typed — tap one to fill the name and phone
+  const suggest = () => {
+    const t = $('#f_guest').value.trim().toLowerCase(), d = np($('#f_phone').value);
+    const exact = custs.filter(c => (np($('#f_phone').value).length >= 10 ? np(c.phone) === d : c.name.trim().toLowerCase() === t && t));
+    const list = exact.length === 1 || (t.length < 2 && d.length < 3) ? [] :
+      custs.filter(c => (t.length >= 2 && c.name.toLowerCase().includes(t)) || (d.length >= 3 && np(c.phone).includes(d))).slice(0, 4);
+    $('#sug').innerHTML = list.map(c => `<button type="button" data-sid="${c.id}">${esc(c.name || c.phone)}${c.phone ? ' · ' + esc(c.phone) : ''}${c.id_img ? ' ✓' : ''}</button>`).join('');
+    $('#sug').querySelectorAll('button').forEach(x => x.onclick = () => { const c = custs.find(k => k.id === +x.dataset.sid); $('#f_guest').value = c.name; $('#f_phone').value = c.phone; lookup(); suggest(); });
+  };
+  $('#f_guest').oninput = suggest;
+  $('#f_guest').onchange = () => { lookup(); suggest(); };
+  $('#f_phone').oninput = () => { if (np($('#f_phone').value).length >= 10) lookup(); suggest(); };
   $('#f_phone').onchange = lookup;
   lookup();
 
@@ -299,11 +349,14 @@ function bookingForm(id, date) {
     const p = [v.start, v.nights, v.guest, v.phone, v.source, v.total, v.advance, v.settled, v.notes, v.cin, v.cout, v.guests];
     const cid = ensureCustomer(v.guest, v.phone);
     if (st.pending && cid) db.run('UPDATE customers SET id_img=? WHERE id=?', [st.pending, cid]);
+    let bid = id;
     if (id) run('UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=?,checkin_time=?,checkout_time=?,guests=? WHERE id=?', [...p, id]);
-    else run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', p);
+    else { run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes,checkin_time,checkout_time,guests) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', p); bid = q('SELECT max(id) m FROM bookings')[0].m; }
     const [y, m] = v.start.split('-').map(Number); cur = { y, m: m - 1 };
     closeSheet();
+    if (!id) shareBooking(bid);
   };
+  if (id) $('#shareb').onclick = () => shareBooking(id);
   if (id) $('#del').onclick = () => { if (confirm('Delete this booking?')) { run('DELETE FROM bookings WHERE id=?', [id]); closeSheet(); } };
 }
 
