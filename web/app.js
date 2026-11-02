@@ -21,6 +21,15 @@ function migrate(d) {
    ['bookings', 'guests', 'INTEGER DEFAULT 2'], ['customers', 'id_img', 'BLOB']]
     .forEach(([t, c, def]) => { if (!hasCol(d, t, c)) d.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); });
 }
+/* expense categories: the built-in ones, any you added, and any already used by an expense */
+function allCats(selected) {
+  let extra = [];
+  try { extra = JSON.parse(q("SELECT value FROM settings WHERE key='extra_categories'")[0]?.value || '[]'); } catch (e) { }
+  const used = q('SELECT DISTINCT category c FROM expenses').map(r => r.c);
+  const list = [...new Set([...CATEGORIES, ...extra, ...used, selected].filter(Boolean))].filter(c => c !== 'Other');
+  return [...list, 'Other'];
+}
+const catChips = sel => allCats(sel).map(o => `<button type="button" class="${o === sel ? 'on' : ''}">${esc(o)}</button>`).join('');
 const PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
 let db, tab = 'cal', custQuery = '';
@@ -365,9 +374,22 @@ function expenseForm(id) {
   sheet(`<h3>${id ? 'Edit expense' : 'New expense'}</h3>
   <div class="two"><div><label class="l">Amount ₹</label><input id="e_amt" type="number" inputmode="numeric" value="${esc(e.amount)}"></div><div><label class="l">Date</label><input id="e_date" type="date" value="${esc(e.date)}"></div></div>
   <label class="l">Description</label><input id="e_desc" placeholder="What was it for?" value="${esc(e.description)}" autocomplete="off">
-  <label class="l">Category</label>${seg('e_cat', CATEGORIES, e.category)}
+  <label class="l">Category</label>${seg('e_cat', allCats(e.category), e.category)}
+  <div style="display:flex;gap:8px;margin-top:8px"><input id="e_newcat" placeholder="New category" autocomplete="off"><button type="button" class="btn alt" id="e_addcat" style="width:auto;margin:0;padding:0 18px">Add</button></div>
   <button class="btn" id="save">Save</button>${id ? '<button class="btn del" id="del">Delete expense</button>' : ''}`);
   wireSeg('e_cat');
+  $('#e_addcat').onclick = () => {
+    const name = $('#e_newcat').value.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    const known = allCats(e.category).find(c => c.toLowerCase() === name.toLowerCase());
+    if (!known) {
+      let extra = [];
+      try { extra = JSON.parse(q("SELECT value FROM settings WHERE key='extra_categories'")[0]?.value || '[]'); } catch (x) { }
+      run("INSERT OR REPLACE INTO settings(key,value) VALUES('extra_categories',?)", [JSON.stringify([...extra, name])]);
+    }
+    $('#e_cat').innerHTML = catChips(known || name);
+    $('#e_newcat').value = '';
+  };
   $('#save').onclick = () => {
     const p = [$('#e_date').value, $('#e_desc').value.trim(), segVal('e_cat') || 'Other', +$('#e_amt').value || 0];
     if (!p[0]) return alert('Pick a date');

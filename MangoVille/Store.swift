@@ -8,6 +8,7 @@ final class Store {
     private(set) var bookings: [Booking] = []
     private(set) var expenses: [Expense] = []
     private(set) var customers: [Customer] = []
+    private(set) var extraCategories: [String] = []
     private(set) var fixedCost = 12000
     var errorMessage: String?
 
@@ -91,6 +92,8 @@ final class Store {
                 Expense(id: r.int(0), date: r.text(1), desc: r.text(2), category: r.text(3), amount: r.int(4))
             }
             customers = try db.rows("SELECT \(Self.customerColumns) FROM customers ORDER BY name COLLATE NOCASE") { Self.customer($0) }
+            extraCategories = (try db.rows("SELECT value FROM settings WHERE key='extra_categories'") { $0.text(0) }.first ?? "")
+                .split(separator: "\n").map(String.init)
             fixedCost = try db.rows("SELECT value FROM settings WHERE key='fixed_cost'") { Int($0.text(0)) ?? 0 }.first ?? 0
         } catch {
             errorMessage = "Could not read data: \(error)"
@@ -197,6 +200,22 @@ final class Store {
     }
 
     func delete(_ e: Expense) { write("DELETE FROM expenses WHERE id=?", [.int(e.id)]) }
+
+    /// Built-in categories, ones you added, and any already used by an expense ("Other" stays last).
+    func allCategories(including selected: String = "") -> [String] {
+        var seen = Set<String>()
+        let all = (Choices.categories + extraCategories + expenses.map(\.category) + [selected])
+            .filter { !$0.isEmpty && $0 != "Other" && seen.insert($0).inserted }
+        return all + ["Other"]
+    }
+
+    func addCategory(_ name: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty,
+              !allCategories().contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) else { return }
+        write("INSERT OR REPLACE INTO settings(key,value) VALUES('extra_categories',?)",
+              [.text((extraCategories + [clean]).joined(separator: "\n"))])
+    }
 
     func setFixedCost(_ value: Int) {
         write("INSERT OR REPLACE INTO settings(key,value) VALUES('fixed_cost',?)", [.text(String(value))])

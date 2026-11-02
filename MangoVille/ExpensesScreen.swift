@@ -70,6 +70,8 @@ struct ExpenseForm: View {
     @State private var date: Date
     @State private var amountText: String
     @State private var confirmDelete = false
+    @State private var addingCategory = false
+    @State private var newCategory = ""
 
     init(expense: Expense) {
         _expense = State(initialValue: expense)
@@ -88,8 +90,9 @@ struct ExpenseForm: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     TextField("What was it for?", text: $expense.desc)
                     Picker("Category", selection: $expense.category) {
-                        ForEach(Choices.categories, id: \.self) { Text($0) }
+                        ForEach(store.allCategories(including: expense.category), id: \.self) { Text($0) }
                     }
+                    Button { addingCategory = true } label: { Label("New category", systemImage: "plus.circle") }
                 }
                 if expense.id != 0 {
                     Section {
@@ -102,6 +105,18 @@ struct ExpenseForm: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).fontWeight(.semibold) }
+            }
+            .alert("New category", isPresented: $addingCategory) {
+                TextField("Name", text: $newCategory)
+                Button("Add") {
+                    store.addCategory(newCategory)
+                    let clean = newCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let match = store.allCategories().first(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) {
+                        expense.category = match
+                    }
+                    newCategory = ""
+                }
+                Button("Cancel", role: .cancel) { newCategory = "" }
             }
             .confirmationDialog("Delete this expense?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
