@@ -74,10 +74,16 @@ function renderCal() {
   for (let d = 1; d <= dim; d++) {
     const date = iso(cur.y, cur.m, d), list = per[date] || [];
     const cls = list.length ? 'booked' + (list.some(due) ? ' hasdue' : '') : date < today ? 'miss' : 'free';
-    const label = list.length ? esc((list[0].guest || list[0].source).split(' ')[0]) + (list.length > 1 ? ` +${list.length - 1}` : '') : '';
-    h += `<button class="day ${cls}${date === today ? ' today' : ''}" data-date="${date}">${d}${label ? `<small>${label}</small>` : ''}</button>`;
+    const b = list[0];
+    let info = '';
+    if (b) {
+      info = `<small>${esc((b.guest || b.source).split(' ')[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}</small>`;
+      if (b.start === date) info += `${b.phone ? `<small>${esc(b.phone)}</small>` : ''}<small>T ${b.total}</small><small>A ${b.advance}</small><small class="${due(b) ? 'dueamt' : ''}">${due(b) ? 'D ' + due(b) : 'Paid'}</small>`;
+      else info += '<small>↳ stay</small>';
+    }
+    h += `<button class="day ${cls}${date === today ? ' today' : ''}" data-date="${date}">${d}${info}</button>`;
   }
-  h += '</div></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--miss)"></i>Not occupied</span><span><i style="background:var(--free)"></i>Available</span><span><i style="background:#e08a00;border-radius:50%"></i>Balance due</span></div>';
+  h += '</div></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--miss)"></i>Not occupied</span><span><i style="background:var(--free)"></i>Available</span><span>T total · A advance · D due</span></div>';
   h += `<button class="fab" id="addB" aria-label="New booking">${PLUS}</button>`;
   $('#view').innerHTML = h;
   document.querySelectorAll('.day[data-date]').forEach(b => b.onclick = () => openDay(b.dataset.date));

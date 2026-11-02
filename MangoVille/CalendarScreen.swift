@@ -76,6 +76,7 @@ struct CalendarScreen: View {
             LegendDot(color: Theme.booked, label: "Booked")
             LegendDot(color: Theme.missed, label: "Not occupied")
             LegendDot(color: Theme.free, label: "Available")
+            Text("T total · A advance · D due")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -99,14 +100,25 @@ private struct DayCell: View {
         VStack(spacing: 2) {
             Text("\(day)").font(.callout.weight(.semibold))
             if let first = bookings.first {
-                Text(first.firstName + (bookings.count > 1 ? " +\(bookings.count - 1)" : ""))
-                    .font(.system(size: 10, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                Group {
+                    Text(first.firstName + (bookings.count > 1 ? " +\(bookings.count - 1)" : ""))
+                    if first.start == key {
+                        if !first.phone.isEmpty { Text(first.phone) }
+                        Text("T \(first.total)")
+                        Text("A \(first.advance)")
+                        Text(first.due > 0 ? "D \(first.due)" : "Paid")
+                            .foregroundStyle(first.due > 0 ? Color.red : Color.primary)
+                    } else {
+                        Text("↳ stay")
+                    }
+                }
+                .font(.system(size: 8.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 58)
+        .frame(minHeight: 58)
         .background(fill.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
         .overlay(alignment: .topTrailing) {
             if bookings.contains(where: { $0.due > 0 }) {

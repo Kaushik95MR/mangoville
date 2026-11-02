@@ -1,4 +1,4 @@
-const CACHE = 'mango-ville-v3';
+const CACHE = 'mango-ville-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-180.png',
   'vendor/sql-wasm.js', 'vendor/sql-wasm.wasm'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
