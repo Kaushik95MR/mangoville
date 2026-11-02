@@ -68,16 +68,16 @@ function renderCal() {
   const per = {};
   bs.forEach(b => { for (let i = 0; i < b.nights; i++) { const d = addDays(b.start, i); if (d.startsWith(k)) (per[d] ||= []).push(b); } });
   const s = monthStats(), today = todayISO();
-  let h = `<div class="snap"><div><small>Booked</small><strong>${s.occupied}/${s.dim}</strong></div><div><small>Revenue</small><strong>${inr(s.revenue)}</strong></div><div><small>Due</small><strong class="${s.pending ? 'neg' : ''}">${inr(s.pending)}</strong></div></div>`;
+  let h = `<div class="snap"><div><small>Revenue</small><strong>${inr(s.revenue)}</strong></div><div><small>Profit</small><strong class="${s.net < 0 ? 'neg' : ''}">${inr(s.net)}</strong></div><div><small>Booked</small><strong>${s.occupied}/${s.dim}</strong></div><div><small>Due</small><strong class="${s.pending ? 'neg' : ''}">${inr(s.pending)}</strong></div></div>`;
   h += '<div class="cal"><div class="grid">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => `<div class="dow">${d}</div>`).join('');
   for (let i = 0; i < lead; i++) h += '<div class="day blank"></div>';
   for (let d = 1; d <= dim; d++) {
     const date = iso(cur.y, cur.m, d), list = per[date] || [];
-    const cls = list.length ? (list.some(due) ? 'due' : 'paid') : '';
+    const cls = list.length ? 'booked' + (list.some(due) ? ' hasdue' : '') : date < today ? 'miss' : 'free';
     const label = list.length ? esc((list[0].guest || list[0].source).split(' ')[0]) + (list.length > 1 ? ` +${list.length - 1}` : '') : '';
-    h += `<button class="day ${cls}${date === today ? ' today' : ''}${date < today ? ' past' : ''}" data-date="${date}">${d}${label ? `<small>${label}</small>` : ''}</button>`;
+    h += `<button class="day ${cls}${date === today ? ' today' : ''}" data-date="${date}">${d}${label ? `<small>${label}</small>` : ''}</button>`;
   }
-  h += '</div></div><div class="legend"><span><i style="background:var(--paid)"></i>Paid</span><span><i style="background:var(--due)"></i>Balance due</span><span>Blank = available</span></div>';
+  h += '</div></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--miss)"></i>Not occupied</span><span><i style="background:var(--free)"></i>Available</span><span><i style="background:#e08a00;border-radius:50%"></i>Balance due</span></div>';
   h += `<button class="fab" id="addB" aria-label="New booking">${PLUS}</button>`;
   $('#view').innerHTML = h;
   document.querySelectorAll('.day[data-date]').forEach(b => b.onclick = () => openDay(b.dataset.date));
