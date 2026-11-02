@@ -82,7 +82,7 @@ function renderCal() {
 }
 
 function bookingRow(b, showDate) {
-  return `<button class="row" data-id="${b.id}"><span>${esc(b.guest || '(no name)')}<small>${showDate ? nice(b.start) + ' · ' : ''}${b.nights} night${b.nights > 1 ? 's' : ''} · ${esc(b.source)}</small></span>
+  return `<button class="row" data-id="${b.id}"><span>${esc(b.guest || '(no name)')}<small>${showDate ? esc(nice(b.start)) + ' · ' : ''}${esc(b.nights)} night${b.nights > 1 ? 's' : ''} · ${esc(b.source)}</small></span>
   <span class="amt">${inr(b.total)}${due(b) ? `<small class="neg">due ${inr(due(b))}</small>` : '<small>paid</small>'}</span></button>`;
 }
 
@@ -90,7 +90,7 @@ function renderExp() {
   const s = monthStats();
   $('#view').innerHTML = `<div class="card"><h2>Total spent</h2><div class="stat"><strong>${inr(s.expenses)}</strong></div></div>
   <div class="card">${s.exp.length ? s.exp.sort((a, b) => b.date.localeCompare(a.date)).map(e =>
-    `<button class="row" data-eid="${e.id}"><span>${esc(e.description || e.category)}<small>${nice(e.date)} · ${esc(e.category)}</small></span><span class="amt">${inr(e.amount)}</span></button>`).join('') : '<div class="empty">No expenses this month</div>'}</div>
+    `<button class="row" data-eid="${e.id}"><span>${esc(e.description || e.category)}<small>${esc(nice(e.date))} · ${esc(e.category)}</small></span><span class="amt">${inr(e.amount)}</span></button>`).join('') : '<div class="empty">No expenses this month</div>'}</div>
   <button class="fab" id="addExp" aria-label="Add expense">+</button>`;
   $('#addExp').onclick = () => expenseForm();
   document.querySelectorAll('[data-eid]').forEach(b => b.onclick = () => expenseForm(+b.dataset.eid));
@@ -126,7 +126,7 @@ $('.scrim').onclick = closeSheet;
 
 function openDay(date) {
   const list = bookingsCovering(date);
-  sheet(`<h3>${nice(date)}</h3>${list.length ? list.map(b => bookingRow(b)).join('') : '<div class="empty">Available — no booking</div>'}
+  sheet(`<h3>${esc(nice(date))}</h3>${list.length ? list.map(b => bookingRow(b)).join('') : '<div class="empty">Available — no booking</div>'}
     <button class="btn" id="add">+ New booking</button><button class="btn alt" id="close">Close</button>`);
   $('#add').onclick = () => bookingForm(null, date);
   $('#close').onclick = closeSheet;
@@ -137,11 +137,11 @@ function bookingForm(id, date) {
   const b = id ? q('SELECT * FROM bookings WHERE id=?', [id])[0] : { start: date || todayISO(), nights: 1, guest: '', phone: '', source: 'Direct', total: '', advance: '', settled: 0, notes: '' };
   const opt = (arr, v) => arr.map(x => `<option${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('');
   sheet(`<h3>${id ? 'Edit booking' : 'New booking'}</h3>
-  <div class="two"><div><label>Check-in</label><input id="f_start" type="date" value="${b.start}"></div><div><label>Nights</label><input id="f_nights" type="number" inputmode="numeric" min="1" value="${b.nights}"></div></div>
+  <div class="two"><div><label>Check-in</label><input id="f_start" type="date" value="${esc(b.start)}"></div><div><label>Nights</label><input id="f_nights" type="number" inputmode="numeric" min="1" value="${esc(b.nights)}"></div></div>
   <label>Guest name</label><input id="f_guest" value="${esc(b.guest)}" autocomplete="off">
   <label>Phone</label><input id="f_phone" type="tel" value="${esc(b.phone)}">
   <label>Source</label><select id="f_source">${opt(SOURCES, b.source)}</select>
-  <div class="two"><div><label>Total (₹)</label><input id="f_total" type="number" inputmode="numeric" value="${b.total}"></div><div><label>Advance (₹)</label><input id="f_adv" type="number" inputmode="numeric" value="${b.advance}"></div></div>
+  <div class="two"><div><label>Total (₹)</label><input id="f_total" type="number" inputmode="numeric" value="${esc(b.total)}"></div><div><label>Advance (₹)</label><input id="f_adv" type="number" inputmode="numeric" value="${esc(b.advance)}"></div></div>
   <label class="check"><input id="f_settled" type="checkbox"${b.settled ? ' checked' : ''}> Balance fully paid</label>
   <label>Notes</label><textarea id="f_notes" rows="2">${esc(b.notes)}</textarea>
   <button class="btn" id="save">Save</button>${id && b.phone ? `<a class="btn alt" style="text-align:center;text-decoration:none" href="tel:${esc(b.phone)}">Call guest</a>` : ''}
@@ -162,10 +162,10 @@ function bookingForm(id, date) {
 function expenseForm(id) {
   const e = id ? q('SELECT * FROM expenses WHERE id=?', [id])[0] : { date: todayISO(), description: '', category: 'Other', amount: '' };
   sheet(`<h3>${id ? 'Edit expense' : 'New expense'}</h3>
-  <label>Date</label><input id="e_date" type="date" value="${e.date}">
+  <label>Date</label><input id="e_date" type="date" value="${esc(e.date)}">
   <label>Description</label><input id="e_desc" value="${esc(e.description)}" autocomplete="off">
   <label>Category</label><select id="e_cat">${CATEGORIES.map(c => `<option${c === e.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
-  <label>Amount (₹)</label><input id="e_amt" type="number" inputmode="numeric" value="${e.amount}">
+  <label>Amount (₹)</label><input id="e_amt" type="number" inputmode="numeric" value="${esc(e.amount)}">
   <button class="btn" id="save">Save</button>${id ? '<button class="btn del" id="del">Delete</button>' : ''}<button class="btn alt" id="cancel">Cancel</button>`);
   $('#cancel').onclick = closeSheet;
   $('#save').onclick = () => {
