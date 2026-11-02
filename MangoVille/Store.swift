@@ -7,6 +7,7 @@ import Observation
 final class Store {
     private(set) var bookings: [Booking] = []
     private(set) var expenses: [Expense] = []
+    private(set) var customers: [Customer] = []
     private(set) var fixedCost = 12000
     var errorMessage: String?
 
@@ -19,6 +20,8 @@ final class Store {
     CREATE TABLE IF NOT EXISTS expenses(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, description TEXT DEFAULT '',
       category TEXT DEFAULT 'Other', amount INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE IF NOT EXISTS customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT DEFAULT '', phone TEXT DEFAULT '', city TEXT DEFAULT '',
+      id_proof TEXT DEFAULT '', notes TEXT DEFAULT '');
     INSERT OR IGNORE INTO settings VALUES('fixed_cost','12000');
     """
 
@@ -35,6 +38,7 @@ final class Store {
             let database = try SQLiteDB(path: Self.databaseURL.path)
             try database.script(Self.schema)
             db = database
+            backfillCustomers()
             reload()
         } catch {
             errorMessage = "Could not open the database: \(error)"
@@ -51,6 +55,9 @@ final class Store {
             expenses = try db.rows("SELECT id,date,description,category,amount FROM expenses ORDER BY date DESC,id DESC") { r in
                 Expense(id: r.int(0), date: r.text(1), desc: r.text(2), category: r.text(3), amount: r.int(4))
             }
+            customers = try db.rows("SELECT id,name,phone,city,id_proof,notes FROM customers ORDER BY name COLLATE NOCASE") { r in
+                Customer(id: r.int(0), name: r.text(1), phone: r.text(2), city: r.text(3), idProof: r.text(4), notes: r.text(5))
+            }
             fixedCost = try db.rows("SELECT value FROM settings WHERE key='fixed_cost'") { Int($0.text(0)) ?? 0 }.first ?? 0
         } catch {
             errorMessage = "Could not read data: \(error)"
@@ -65,6 +72,7 @@ final class Store {
     // MARK: Bookings
 
     func save(_ b: Booking) {
+        ensureCustomer(guest: b.guest, phone: b.phone)
         let args: [Arg] = [.text(b.start), .int(b.nights), .text(b.guest), .text(b.phone), .text(b.source),
                            .int(b.total), .int(b.advance), .int(b.settled ? 1 : 0), .text(b.notes)]
         if b.id == 0 {
@@ -76,6 +84,50 @@ final class Store {
     }
 
     func delete(_ b: Booking) { write("DELETE FROM bookings WHERE id=?", [.int(b.id)]) }
+
+    // MARK: Customers
+
+    /// Adds an address-book entry for this guest unless one already matches.
+    private func ensureCustomer(guest: String, phone: String) {
+        let name = guest.trimmingCharacters(in: .whitespaces)
+        let number = Customer.normalize(phone)
+        if name.isEmpty && number.isEmpty { return }
+        if number.isEmpty && Choices.sources.contains(name) { return }
+        guard let db else { return }
+        let existing = (try? db.rows("SELECT id,name,phone,city,id_proof,notes FROM customers") { r in
+            Customer(id: r.int(0), name: r.text(1), phone: r.text(2), city: r.text(3), idProof: r.text(4), notes: r.text(5))
+        }) ?? []
+        if existing.contains(where: { $0.matches(guest: name, phone: number) }) { return }
+        try? db.run("INSERT INTO customers(name,phone) VALUES(?,?)", [.text(name), .text(number)])
+    }
+
+    /// Makes sure every guest in the bookings (for example after a restore) has a customer entry.
+    private func backfillCustomers() {
+        guard let db else { return }
+        let rows = (try? db.rows("SELECT guest,phone FROM bookings") { ($0.text(0), $0.text(1)) }) ?? []
+        for (guest, phone) in rows { ensureCustomer(guest: guest, phone: phone) }
+    }
+
+    func bookings(for customer: Customer) -> [Booking] {
+        bookings.filter { customer.matches(guest: $0.guest, phone: $0.phone) }.sorted { $0.start > $1.start }
+    }
+
+    func save(_ c: Customer) {
+        let args: [Arg] = [.text(c.name), .text(Customer.normalize(c.phone)), .text(c.city), .text(c.idProof), .text(c.notes)]
+        if c.id == 0 {
+            write("INSERT INTO customers(name,phone,city,id_proof,notes) VALUES(?,?,?,?,?)", args)
+        } else {
+            // keep the guest's bookings attached if the name or number changed
+            if let old = customers.first(where: { $0.id == c.id }) {
+                for b in bookings(for: old) {
+                    try? db?.run("UPDATE bookings SET guest=?,phone=? WHERE id=?", [.text(c.name), .text(Customer.normalize(c.phone)), .int(b.id)])
+                }
+            }
+            write("UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=? WHERE id=?", args + [.int(c.id)])
+        }
+    }
+
+    func delete(_ c: Customer) { write("DELETE FROM customers WHERE id=?", [.int(c.id)]) }
 
     // MARK: Expenses
 

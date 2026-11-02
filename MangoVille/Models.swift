@@ -28,6 +28,30 @@ struct Expense: Identifiable, Hashable {
     var amount = 0
 }
 
+struct Customer: Identifiable, Hashable {
+    var id = 0
+    var name = ""
+    var phone = ""
+    var city = ""
+    var idProof = ""
+    var notes = ""
+
+    var displayName: String { name.isEmpty ? (phone.isEmpty ? "Unnamed" : phone) : name }
+
+    /// Last 10 digits, so "+91 63644 28956" and "6364428956" are the same person.
+    static func normalize(_ phone: String) -> String {
+        let digits = phone.filter(\.isNumber)
+        return digits.count >= 10 ? String(digits.suffix(10)) : digits
+    }
+
+    func matches(guest: String, phone other: String) -> Bool {
+        let a = Customer.normalize(phone), b = Customer.normalize(other)
+        if !a.isEmpty && !b.isEmpty { return a == b }
+        let n = name.trimmingCharacters(in: .whitespaces).lowercased()
+        return !n.isEmpty && n == guest.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+}
+
 struct SourceTotal: Identifiable {
     var name: String
     var amount: Int

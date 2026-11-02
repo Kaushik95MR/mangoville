@@ -21,6 +21,8 @@ struct RootView: View {
         TabView {
             NavigationStack { CalendarScreen(month: $month) }
                 .tabItem { Label("Calendar", systemImage: "calendar") }
+            NavigationStack { CustomersScreen() }
+                .tabItem { Label("Customers", systemImage: "person.2.fill") }
             NavigationStack { ExpensesScreen(month: $month) }
                 .tabItem { Label("Expenses", systemImage: "list.bullet.rectangle") }
             NavigationStack { SummaryScreen(month: $month) }

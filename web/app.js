@@ -12,10 +12,12 @@ CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY AUTOINCREMENT, start 
 CREATE TABLE IF NOT EXISTS expenses(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, description TEXT DEFAULT '',
   category TEXT DEFAULT 'Other', amount INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT DEFAULT '', phone TEXT DEFAULT '', city TEXT DEFAULT '',
+  id_proof TEXT DEFAULT '', notes TEXT DEFAULT '');
 INSERT OR IGNORE INTO settings VALUES('fixed_cost','12000');`;
 const PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
-let db, tab = 'cal';
+let db, tab = 'cal', custQuery = '';
 const now = new Date();
 let cur = { y: now.getFullYear(), m: now.getMonth() };
 
@@ -32,6 +34,19 @@ const nice = (s, long) => { const [y, m, d] = s.split('-').map(Number); return n
 const q = (sql, p = []) => { const st = db.prepare(sql); st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
 const run = (sql, p = []) => { db.run(sql, p); persist(); };
 const due = b => (b.settled ? 0 : Math.max(0, b.total - b.advance));
+const np = p => { const d = String(p ?? '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+const sameCust = (c, name, phone) => {
+  const a = np(c.phone), b = np(phone);
+  if (a && b) return a === b;
+  const n1 = String(c.name || '').trim().toLowerCase();
+  return !!n1 && n1 === String(name || '').trim().toLowerCase();
+};
+function ensureCustomer(name, phone) {
+  name = String(name || '').trim();
+  if ((!name && !np(phone)) || (!np(phone) && SOURCES.includes(name))) return;
+  if (!q('SELECT * FROM customers').some(c => sameCust(c, name, phone))) db.run('INSERT INTO customers(name,phone) VALUES(?,?)', [name, np(phone)]);
+}
+function backfillCustomers() { q('SELECT guest,phone FROM bookings').forEach(b => ensureCustomer(b.guest, b.phone)); persist(); }
 const fixedCost = () => +q('SELECT value FROM settings WHERE key="fixed_cost"')[0].value || 0;
 
 /* ---------- storage: the .sqlite bytes live in IndexedDB ---------- */
@@ -59,7 +74,8 @@ function monthStats() {
 function render() {
   $('#title').textContent = `${MONTHS[cur.m]} ${cur.y}`;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ({ cal: renderCal, exp: renderExp, sum: renderSum })[tab]();
+  $('.monthbar').style.display = tab === 'cus' ? 'none' : '';
+  ({ cal: renderCal, exp: renderExp, sum: renderSum, cus: renderCus })[tab]();
 }
 
 function renderCal() {
@@ -129,6 +145,56 @@ function renderSum() {
   $('#file').onchange = importDb;
 }
 
+function custRows() {
+  const bookings = q('SELECT * FROM bookings'), s = custQuery.trim().toLowerCase();
+  return q('SELECT * FROM customers').map(c => {
+    const bs = bookings.filter(b => sameCust(c, b.guest, b.phone));
+    return { c, bs, spent: bs.reduce((a, b) => a + b.total, 0), owed: bs.reduce((a, b) => a + due(b), 0), last: bs.reduce((m, b) => (b.start > m ? b.start : m), '') };
+  }).filter(r => !s || [r.c.name, r.c.phone, r.c.city].some(x => String(x || '').toLowerCase().includes(s)))
+    .sort((a, b) => b.last.localeCompare(a.last) || String(a.c.name).localeCompare(String(b.c.name)));
+}
+function drawCus() {
+  const rows = custRows();
+  $('#clist').innerHTML = rows.length ? rows.map(r => `<button class="row" data-cid="${r.c.id}"><span><b>${esc(r.c.name || r.c.phone || 'Unnamed')}</b>
+    <small>${esc(r.c.phone)}${r.c.city ? ' · ' + esc(r.c.city) : ''} · ${r.bs.length} stay${r.bs.length === 1 ? '' : 's'}${r.last ? ' · last ' + esc(nice(r.last)) : ''}</small></span>
+    <span class="amt">${inr(r.spent)}${r.owed ? `<br><span class="pill due">Due ${inr(r.owed)}</span>` : ''}</span></button>`).join('') : '<div class="empty">No customers found</div>';
+  document.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => customerForm(+b.dataset.cid));
+}
+function renderCus() {
+  $('#view').innerHTML = `<h2 style="margin:6px 4px 10px;font-size:26px;letter-spacing:-.02em">Customers</h2>
+  <input id="cq" type="search" placeholder="Search name, phone or city" value="${esc(custQuery)}">
+  <div class="card" id="clist" style="padding:4px 16px"></div><button class="fab" id="addC" aria-label="Add customer">${PLUS}</button>`;
+  $('#cq').oninput = e => { custQuery = e.target.value; drawCus(); };
+  $('#addC').onclick = () => customerForm();
+  drawCus();
+}
+
+function customerForm(id) {
+  const c = id ? q('SELECT * FROM customers WHERE id=?', [id])[0] : { name: '', phone: '', city: '', id_proof: '', notes: '' };
+  const bs = id ? q('SELECT * FROM bookings ORDER BY start DESC').filter(b => sameCust(c, b.guest, b.phone)) : [];
+  sheet(`<h3>${id ? 'Customer' : 'New customer'}</h3>
+  <label class="l">Name</label><input id="c_name" value="${esc(c.name)}" autocomplete="off">
+  <label class="l">Phone</label><input id="c_phone" type="tel" value="${esc(c.phone)}">
+  <label class="l">City / address</label><input id="c_city" value="${esc(c.city)}">
+  <label class="l">ID proof (optional)</label><input id="c_id" placeholder="e.g. Aadhaar / licence number" value="${esc(c.id_proof)}">
+  <label class="l">Notes</label><textarea id="c_notes" rows="2" placeholder="Preferences, group size, vehicle...">${esc(c.notes)}</textarea>
+  ${bs.length ? `<label class="l">Stays · ${bs.length} · ${inr(bs.reduce((a, b) => a + b.total, 0))}</label><div class="list">${bs.map(b => bookingRow(b, true)).join('')}</div>` : ''}
+  <button class="btn" id="save">Save</button>
+  ${id && c.phone ? `<a class="btn alt" href="tel:${esc(c.phone)}">Call</a>` : ''}
+  ${id ? '<button class="btn del" id="del">Delete contact (bookings stay)</button>' : ''}`);
+  document.querySelectorAll('#panel [data-id]').forEach(b => b.onclick = () => bookingForm(+b.dataset.id));
+  $('#save').onclick = () => {
+    const v = { name: $('#c_name').value.trim(), phone: np($('#c_phone').value), city: $('#c_city').value.trim(), id_proof: $('#c_id').value.trim(), notes: $('#c_notes').value.trim() };
+    if (!v.name && !v.phone) return alert('Enter a name or phone number');
+    if (id) {
+      bs.forEach(b => db.run('UPDATE bookings SET guest=?,phone=? WHERE id=?', [v.name, v.phone, b.id]));
+      run('UPDATE customers SET name=?,phone=?,city=?,id_proof=?,notes=? WHERE id=?', [v.name, v.phone, v.city, v.id_proof, v.notes, id]);
+    } else run('INSERT INTO customers(name,phone,city,id_proof,notes) VALUES(?,?,?,?,?)', [v.name, v.phone, v.city, v.id_proof, v.notes]);
+    closeSheet();
+  };
+  if (id) $('#del').onclick = () => { if (confirm('Delete this contact? Their bookings are kept.')) { run('DELETE FROM customers WHERE id=?', [id]); closeSheet(); } };
+}
+
 /* ---------- bottom sheet ---------- */
 function sheet(html) { $('#panel').innerHTML = html; $('#sheet').hidden = false; $('#panel').scrollTop = 0; }
 function closeSheet() { $('#sheet').hidden = true; render(); }
@@ -148,7 +214,7 @@ function openDay(date) {
 function bookingForm(id, date) {
   const b = id ? q('SELECT * FROM bookings WHERE id=?', [id])[0] : { start: date || todayISO(), nights: 1, guest: '', phone: '', source: 'Direct', total: '', advance: '', settled: 0, notes: '' };
   sheet(`<h3>${id ? 'Edit booking' : 'New booking'}</h3>
-  <label class="l">Guest</label><input id="f_guest" placeholder="Name" value="${esc(b.guest)}" autocomplete="off">
+  <label class="l">Guest</label><input id="f_guest" list="custlist" placeholder="Name" value="${esc(b.guest)}" autocomplete="off"><datalist id="custlist">${q('SELECT name FROM customers WHERE name<>""').map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
   <label class="l">Phone</label><input id="f_phone" type="tel" placeholder="Mobile number" value="${esc(b.phone)}">
   <div class="two"><div><label class="l">Check-in</label><input id="f_start" type="date" value="${esc(b.start)}"></div><div><label class="l">Nights</label><input id="f_nights" type="number" inputmode="numeric" min="1" value="${esc(b.nights)}"></div></div>
   <label class="l">Source</label>${seg('f_source', SOURCES, b.source)}
@@ -160,12 +226,14 @@ function bookingForm(id, date) {
   ${id && b.phone ? `<a class="btn alt" href="tel:${esc(b.phone)}">Call guest</a>` : ''}
   ${id ? '<button class="btn del" id="del">Delete booking</button>' : ''}`);
   wireSeg('f_source');
+  $('#f_guest').onchange = () => { const c = q('SELECT * FROM customers').find(x => x.name.trim().toLowerCase() === $('#f_guest').value.trim().toLowerCase()); if (c && !$('#f_phone').value) $('#f_phone').value = c.phone; };
   const bal = () => { const d = $('#f_settled').checked ? 0 : Math.max(0, (+$('#f_total').value || 0) - (+$('#f_adv').value || 0)); $('#balv').textContent = d ? inr(d) : 'Nothing due'; $('#balv').className = d ? 'neg' : ''; };
   ['f_total', 'f_adv', 'f_settled'].forEach(i => $('#' + i).oninput = bal); bal();
   $('#save').onclick = () => {
     const v = { start: $('#f_start').value, nights: Math.max(1, Math.floor(+$('#f_nights').value) || 1), guest: $('#f_guest').value.trim(), phone: $('#f_phone').value.trim(), source: segVal('f_source') || 'Direct', total: +$('#f_total').value || 0, advance: +$('#f_adv').value || 0, settled: $('#f_settled').checked ? 1 : 0, notes: $('#f_notes').value.trim() };
     if (!v.start) return alert('Pick a check-in date');
     const p = [v.start, v.nights, v.guest, v.phone, v.source, v.total, v.advance, v.settled, v.notes];
+    ensureCustomer(v.guest, v.phone);
     if (id) run('UPDATE bookings SET start=?,nights=?,guest=?,phone=?,source=?,total=?,advance=?,settled=?,notes=? WHERE id=?', [...p, id]);
     else run('INSERT INTO bookings(start,nights,guest,phone,source,total,advance,settled,notes) VALUES(?,?,?,?,?,?,?,?,?)', p);
     const [y, m] = v.start.split('-').map(Number); cur = { y, m: m - 1 };
@@ -203,7 +271,7 @@ async function importDb(ev) {
   const bytes = new Uint8Array(await f.arrayBuffer());
   if (!confirm('This replaces everything in the app with the contents of this file. Continue?')) return;
   try {
-    const next = new SQL.Database(bytes); next.exec(SCHEMA); next.exec('SELECT count(*) FROM bookings'); db = next; persist(); render();
+    const next = new SQL.Database(bytes); next.exec(SCHEMA); next.exec('SELECT count(*) FROM bookings'); db = next; backfillCustomers(); render();
     alert('Restored.');
   } catch (e) { alert('That file is not a Mango Ville backup.'); }
 }
@@ -214,7 +282,7 @@ async function boot() {
   const saved = await idbGet();
   db = saved ? new SQL.Database(saved) : new SQL.Database();
   db.exec(SCHEMA);
-  persist();
+  backfillCustomers();
   navigator.storage?.persist?.();
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
   const step = n => { cur.m += n; if (cur.m > 11) { cur.m = 0; cur.y++; } if (cur.m < 0) { cur.m = 11; cur.y--; } render(); };
