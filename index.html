@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mango Ville</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
-<meta name="theme-color" content="#2f6b3a">
+<meta name="theme-color" content="#f6f3ec">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Mango Ville">
@@ -17,15 +17,18 @@
 </head>
 <body>
 <header>
-  <button id="prev" aria-label="Previous month">‹</button>
-  <h1 id="title"></h1>
-  <button id="next" aria-label="Next month">›</button>
+  <div class="brand"><span>Mango Ville</span><button id="today">Today</button></div>
+  <div class="monthbar">
+    <button id="prev" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <h1 id="title"></h1>
+    <button id="next" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>
 </header>
 <main id="view"></main>
 <nav>
-  <button data-tab="cal" class="on">Calendar</button>
-  <button data-tab="exp">Expenses</button>
-  <button data-tab="sum">Summary</button>
+  <button data-tab="cal" class="on"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Calendar</button>
+  <button data-tab="exp"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg>Expenses</button>
+  <button data-tab="sum"><svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>Summary</button>
 </nav>
 <div id="sheet" hidden><div class="scrim"></div><div class="panel" id="panel"></div></div>
 <script src="vendor/sql-wasm.js"></script>
